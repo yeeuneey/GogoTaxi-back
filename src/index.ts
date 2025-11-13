@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type Request, type Response } from 'express';
 import cors, { type CorsOptions } from 'cors';
 import dotenv from 'dotenv';
 import { PrismaClient, type User } from '@prisma/client';
@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 dotenv.config();
 
 const app = express();
-const port = Number(process.env.PORT) || 3000;
+const port = Number(process.env.PORT) || 4000;
 
 const prisma = new PrismaClient();
 const prismaAny = prisma as Record<string, any>;
@@ -236,7 +236,7 @@ const ensureUserForSocialProfile = async (
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.options('/{*splat}', cors(corsOptions));
 app.use(express.json());
 
 app.get('/api/test', (_req, res) => {
@@ -264,7 +264,7 @@ app.get('/api/auth/check-id', async (req, res) => {
   }
 });
 
-app.post('/api/auth/register', async (req, res) => {
+const handleRegister = async (req: Request, res: Response) => {
   try {
     const { userid, pw, name, gender, sms, terms, phone, birthDate } = req.body;
 
@@ -320,7 +320,10 @@ app.post('/api/auth/register', async (req, res) => {
     console.error('register error:', error);
     res.status(500).json({ error: 'Unexpected server error.' });
   }
-});
+};
+
+app.post('/api/auth/register', handleRegister);
+app.post('/api/auth/signup', handleRegister);
 
 app.post('/api/auth/login', async (req, res) => {
   try {

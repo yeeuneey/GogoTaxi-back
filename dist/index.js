@@ -148,7 +148,7 @@ const ensureUserForSocialProfile = async (profile) => {
     return user;
 };
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.options('/{*splat}', cors(corsOptions));
 app.use(express.json());
 app.get('/api/test', (_req, res) => {
     res.json({ message: 'Backend server running' });
