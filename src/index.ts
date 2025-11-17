@@ -9,7 +9,7 @@ import { router } from './routes';
 const logger = pino({ transport: { target: 'pino-pretty' } });
 const app = express();
 
-const PORT = Number(ENV.PORT) || 8080;
+const PORT = Number(ENV.PORT) || 3000;
 
 app.use(helmet());
 app.use(
