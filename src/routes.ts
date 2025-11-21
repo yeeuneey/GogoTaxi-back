@@ -5,6 +5,8 @@ import { walletRouter } from './modules/wallet/routes';
 import { settlementRouter } from './modules/settlement/routes';
 import { paymentsRouter } from './modules/payments/routes';
 import { notificationsRouter } from './modules/notifications/routes';
+import { reviewRouter } from './modules/review/routes';
+import { reportRouter } from './modules/report/routes';
 
 export const router = Router();
 
@@ -23,6 +25,10 @@ router.use('/settlements', settlementRouter);
 
 // 알림
 router.use('/notifications', notificationsRouter);
+
+// 후기 / 신고
+router.use('/reviews', reviewRouter);
+router.use('/reports', reportRouter);
 
 // 보호 라우트 예시 (토큰 필요)
 router.get('/me', requireAuth, (req, res) => {

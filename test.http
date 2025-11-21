@@ -104,6 +104,36 @@ Authorization: Bearer {{TOKEN}}
   "body": "테스트 메시지입니다."
 }
 
+### 후기 작성
+POST {{BASE}}/api/reviews
+Content-Type: application/json
+Authorization: Bearer {{TOKEN}}
+
+{
+  "roomId": "{{ROOM_ID}}",
+  "rating": 5,
+  "comment": "방 좋아요!"
+}
+
+### 방 후기 목록
+GET {{BASE}}/api/reviews/room/{{ROOM_ID}}
+Authorization: Bearer {{TOKEN}}
+
+### 신고 작성
+POST {{BASE}}/api/reports
+Content-Type: application/json
+Authorization: Bearer {{TOKEN}}
+
+{
+  "roomId": "{{ROOM_ID}}",
+  "reportedSeatNumber": 2,
+  "message": "노쇼 발생"
+}
+
+### 내 신고 목록
+GET {{BASE}}/api/reports/me
+Authorization: Bearer {{TOKEN}}
+
 ### 1. 방 생성 (로컬)
 ### - JWT는 위에서 로그인 해서 직접 복사해 넣기 (@JWT 갱신 필수!)
 POST {{BASE}}/api/rooms
