@@ -34,3 +34,9 @@ export const UpdateProfileDto = z
     message: 'At least one field is required'
   });
 export type UpdateProfileDto = z.infer<typeof UpdateProfileDto>;
+
+export const ChangePasswordDto = z.object({
+  currentPassword: z.string().min(8).max(64),
+  newPassword: z.string().min(8).max(64)
+});
+export type ChangePasswordDto = z.infer<typeof ChangePasswordDto>;

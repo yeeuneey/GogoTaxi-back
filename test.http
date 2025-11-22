@@ -1,5 +1,5 @@
 @BASE = http://localhost:8080
-@ACCESS = paste_access_token_here
+@ACCESS = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWk1b3g1NWEwMDAwcGhrd3Y0N2pkcm5tIiwibG9naW5JZCI6InllZXVuZWUiLCJ0eXBlIjoiYWNjZXNzIiwianRpIjoiNjNmZGEwYmMtOWY2YS00OTQzLWJkZWYtNzgyYmFhMDk1ZGQ1IiwiaWF0IjoxNzYzNzg4MDU1LCJleHAiOjE3NjM3ODg5NTV9.tsHqglCrR1rGF6uo4o0YVu6quzMd4AN27FxZNQwwzFw
 @REFRESH = paste_refresh_token_here
 
 ### Health Check
@@ -33,6 +33,18 @@ Content-Type: application/json
 GET {{BASE}}/api/me
 Authorization: Bearer {{ACCESS}}
 
+### Update Profile (any subset of fields)
+PATCH {{BASE}}/api/me
+Authorization: Bearer {{ACCESS}}
+Content-Type: application/json
+
+{
+  "name": "김예니",
+  "phone": "010-7588-3370",
+  "gender": "F",
+  "birthDate": "2001-01-01"
+}
+
 ### Refresh Tokens
 POST {{BASE}}/api/auth/refresh
 Content-Type: application/json
@@ -47,4 +59,14 @@ Content-Type: application/json
 
 {
   "refreshToken": "{{REFRESH}}"
+}
+
+### Change Password
+PATCH {{BASE}}/api/me/password
+Authorization: Bearer {{ACCESS}}
+Content-Type: application/json
+
+{
+  "currentPassword": "123456789!",
+  "newPassword": "987654321!"
 }

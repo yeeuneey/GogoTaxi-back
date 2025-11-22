@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { prisma } from '../../lib/prisma';
 import bcrypt from 'bcrypt';
-import { SignUpDto, LoginDto, RefreshTokenDto, UpdateProfileDto } from './dto';
+import { SignUpDto, LoginDto, RefreshTokenDto, UpdateProfileDto, ChangePasswordDto } from './dto';
 import { issueAccessToken, issueRefreshToken, verifyRefreshJwt } from '../../lib/jwt';
 import { ENV } from '../../config/env';
 
@@ -199,4 +199,21 @@ export async function updateProfile(userId: string, input: UpdateProfileDto) {
     }
   });
   return user;
+}
+
+export async function changePassword(userId: string, input: ChangePasswordDto) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, passwordHash: true }
+  });
+  if (!user || !user.passwordHash) throw new Error('PASSWORD_NOT_SET');
+
+  const ok = await bcrypt.compare(input.currentPassword, user.passwordHash);
+  if (!ok) throw new Error('INVALID_CURRENT_PASSWORD');
+
+  const nextHash = await bcrypt.hash(input.newPassword, SALT_ROUNDS);
+  await prisma.user.update({
+    where: { id: userId },
+    data: { passwordHash: nextHash }
+  });
 }

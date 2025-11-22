@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { authRouter } from './modules/auth/routes';
 import { requireAuth } from './middlewares/auth';
-import { getProfile, updateProfile } from './modules/auth/service';
-import { UpdateProfileDto } from './modules/auth/dto';
+import { getProfile, updateProfile, changePassword } from './modules/auth/service';
+import { UpdateProfileDto, ChangePasswordDto } from './modules/auth/dto';
 
 export const router = Router();
 
@@ -32,6 +32,22 @@ router.patch('/me', requireAuth, async (req, res) => {
   } catch (e: any) {
     if (e?.name === 'ZodError') return res.status(400).json({ message: 'Validation failed', issues: e.issues });
     if (e?.message === 'USER_NOT_FOUND') return res.status(404).json({ message: 'User not found' });
+    console.error(e);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+router.patch('/me/password', requireAuth, async (req, res) => {
+  try {
+    const input = ChangePasswordDto.parse(req.body);
+    await changePassword(req.userId!, input);
+    res.json({ success: true });
+  } catch (e: any) {
+    if (e?.name === 'ZodError') return res.status(400).json({ message: 'Validation failed', issues: e.issues });
+    if (e?.message === 'INVALID_CURRENT_PASSWORD')
+      return res.status(401).json({ message: 'Current password is incorrect' });
+    if (e?.message === 'PASSWORD_NOT_SET')
+      return res.status(400).json({ message: 'Password not set for this account' });
     console.error(e);
     res.status(500).json({ message: 'Internal error' });
   }
