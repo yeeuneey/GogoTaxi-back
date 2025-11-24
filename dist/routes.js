@@ -1,31 +1,103 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.router = void 0;
-const express_1 = require("express");
-const routes_1 = require("./modules/auth/routes");
-const auth_1 = require("./middlewares/auth");
-const routes_2 = require("./modules/wallet/routes");
-const routes_3 = require("./modules/settlement/routes");
-const routes_4 = require("./modules/payments/routes");
-const routes_5 = require("./modules/notifications/routes");
-const routes_6 = require("./modules/review/routes");
-const routes_7 = require("./modules/report/routes");
-exports.router = (0, express_1.Router)();
-// 상태 확인
-exports.router.get('/', (_req, res) => res.json({ message: 'GogoTaxi backend up' }));
-// 인증 관련
-exports.router.use('/auth', routes_1.authRouter);
-// 지갑 / 결제
-exports.router.use('/wallet', routes_2.walletRouter);
-exports.router.use('/payments', routes_4.paymentsRouter);
-// 정산
-exports.router.use('/settlements', routes_3.settlementRouter);
+import { Router } from "express";
+
+// 인증
+import { authRouter } from "./modules/auth/routes";
+import { requireAuth } from "./middlewares/auth";
+
+// 프로필 관련 서비스
+import { getProfile, updateProfile, changePassword } from "./modules/auth/service";
+import { UpdateProfileDto, ChangePasswordDto } from "./modules/auth/dto";
+
+// 지갑 / 결제 / 정산
+import { walletRouter } from "./modules/wallet/routes";
+import { paymentsRouter } from "./modules/payments/routes";
+import { settlementRouter } from "./modules/settlement/routes";
+
 // 알림
-exports.router.use('/notifications', routes_5.notificationsRouter);
+import { notificationsRouter } from "./modules/notifications/routes";
+
 // 후기 / 신고
-exports.router.use('/reviews', routes_6.reviewRouter);
-exports.router.use('/reports', routes_7.reportRouter);
-// 보호 라우트 예시 (토큰 필요)
-exports.router.get('/me', auth_1.requireAuth, (req, res) => {
-    res.json({ me: req.user });
+import { reviewRouter } from "./modules/review/routes";
+import { reportRouter } from "./modules/report/routes";
+
+export const router = Router();
+
+/* ============================================
+   상태 확인
+=============================================== */
+router.get("/", (_req, res) => res.json({ message: "GogoTaxi backend up" }));
+
+/* ============================================
+   인증 관련
+=============================================== */
+router.use("/auth", authRouter);
+
+/* ============================================
+   지갑 / 결제 / 정산
+=============================================== */
+router.use("/wallet", walletRouter);
+router.use("/payments", paymentsRouter);
+router.use("/settlements", settlementRouter);
+
+/* ============================================
+   알림
+=============================================== */
+router.use("/notifications", notificationsRouter);
+
+/* ============================================
+   후기 / 신고
+=============================================== */
+router.use("/reviews", reviewRouter);
+router.use("/reports", reportRouter);
+
+/* ============================================
+   보호 API (로그인 필요)
+=============================================== */
+router.get("/me", requireAuth, async (req, res) => {
+  try {
+    const me = await getProfile(req.userId);
+    res.json({ me });
+  } catch (e) {
+    if (e?.message === "USER_NOT_FOUND")
+      return res.status(404).json({ message: "User not found" });
+
+    console.error(e);
+    res.status(500).json({ message: "Internal error" });
+  }
 });
+
+router.patch("/me", requireAuth, async (req, res) => {
+  try {
+    const input = UpdateProfileDto.parse(req.body);
+    const me = await updateProfile(req.userId, input);
+    res.json({ me });
+  } catch (e) {
+    if (e?.name === "ZodError")
+      return res.status(400).json({ message: "Validation failed", issues: e.issues });
+    if (e?.message === "USER_NOT_FOUND")
+      return res.status(404).json({ message: "User not found" });
+
+    console.error(e);
+    res.status(500).json({ message: "Internal error" });
+  }
+});
+
+router.patch("/me/password", requireAuth, async (req, res) => {
+  try {
+    const input = ChangePasswordDto.parse(req.body);
+    await changePassword(req.userId, input);
+    res.json({ success: true });
+  } catch (e) {
+    if (e?.name === "ZodError")
+      return res.status(400).json({ message: "Validation failed", issues: e.issues });
+    if (e?.message === "INVALID_CURRENT_PASSWORD")
+      return res.status(401).json({ message: "Current password is incorrect" });
+    if (e?.message === "PASSWORD_NOT_SET")
+      return res.status(400).json({ message: "Password not set for this account" });
+
+    console.error(e);
+    res.status(500).json({ message: "Internal error" });
+  }
+});
+
+module.exports = { router };

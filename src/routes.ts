@@ -1,35 +1,100 @@
 import { Router } from 'express';
+
+// 인증
 import { authRouter } from './modules/auth/routes';
 import { requireAuth } from './middlewares/auth';
+import { getProfile, updateProfile, changePassword } from './modules/auth/service';
+import { UpdateProfileDto, ChangePasswordDto } from './modules/auth/dto';
+
+// 지갑 / 결제 / 정산
 import { walletRouter } from './modules/wallet/routes';
 import { settlementRouter } from './modules/settlement/routes';
 import { paymentsRouter } from './modules/payments/routes';
-import { notificationsRouter } from './modules/notifications/routes';
-import { reviewRouter } from './modules/review/routes';
-import { reportRouter } from './modules/report/routes';
-export const router = Router();
-
-// 상태 확인
-router.get('/', (_req, res) => res.json({ message: 'GogoTaxi backend up' }));
-
-// 인증 관련
-router.use('/auth', authRouter);
-
-// 지갑 / 결제
-router.use('/wallet', walletRouter);
-router.use('/payments', paymentsRouter);
-
-// 정산
-router.use('/settlements', settlementRouter);
 
 // 알림
-router.use('/notifications', notificationsRouter);
+import { notificationsRouter } from './modules/notifications/routes';
 
 // 후기 / 신고
+import { reviewRouter } from './modules/review/routes';
+import { reportRouter } from './modules/report/routes';
+
+export const router = Router();
+
+/* ============================================
+   상태 확인
+=============================================== */
+router.get('/', (_req, res) => res.json({ message: 'GogoTaxi backend up' }));
+
+/* ============================================
+   인증 관련
+=============================================== */
+router.use('/auth', authRouter);
+
+/* ============================================
+   지갑 / 결제 / 정산
+=============================================== */
+router.use('/wallet', walletRouter);
+router.use('/payments', paymentsRouter);
+router.use('/settlements', settlementRouter);
+
+/* ============================================
+   알림
+=============================================== */
+router.use('/notifications', notificationsRouter);
+
+/* ============================================
+   후기 / 신고
+=============================================== */
 router.use('/reviews', reviewRouter);
 router.use('/reports', reportRouter);
 
-// 보호 라우트 예시 (토큰 필요)
-router.get('/me', requireAuth, (req, res) => {
-  res.json({ me: req.user });
+/* ============================================
+   보호 API (로그인 필요)
+=============================================== */
+router.get('/me', requireAuth, async (req: any, res) => {
+  try {
+    const me = await getProfile(req.userId);
+    res.json({ me });
+  } catch (e: any) {
+    if (e?.message === 'USER_NOT_FOUND')
+      return res.status(404).json({ message: 'User not found' });
+    console.error(e);
+    res.status(500).json({ message: 'Internal error' });
+  }
 });
+
+router.patch('/me', requireAuth, async (req: any, res) => {
+  try {
+    const input = UpdateProfileDto.parse(req.body);
+    const me = await updateProfile(req.userId, input);
+    res.json({ me });
+  } catch (e: any) {
+    if (e?.name === 'ZodError')
+      return res.status(400).json({ message: 'Validation failed', issues: e.issues });
+    if (e?.message === 'USER_NOT_FOUND')
+      return res.status(404).json({ message: 'User not found' });
+
+    console.error(e);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+router.patch('/me/password', requireAuth, async (req: any, res) => {
+  try {
+    const input = ChangePasswordDto.parse(req.body);
+    await changePassword(req.userId, input);
+    res.json({ success: true });
+  } catch (e: any) {
+    if (e?.name === 'ZodError')
+      return res.status(400).json({ message: 'Validation failed', issues: e.issues });
+    if (e?.message === 'INVALID_CURRENT_PASSWORD')
+      return res.status(401).json({ message: 'Current password is incorrect' });
+    if (e?.message === 'PASSWORD_NOT_SET')
+      return res.status(400).json({ message: 'Password not set for this account' });
+
+    console.error(e);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+module.exports = { router };

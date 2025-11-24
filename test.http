@@ -158,3 +158,105 @@ Authorization: Bearer {{JWT}}
 GET {{BASE}}/api/rooms/{{ROOM_ID}}
 Authorization: Bearer {{JWT}}
 
+@BASE = http://localhost:8080
+@ACCESS = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWk1b3g1NWEwMDAwcGhrd3Y0N2pkcm5tIiwibG9naW5JZCI6InllZXVuZWUiLCJ0eXBlIjoiYWNjZXNzIiwianRpIjoiNjNmZGEwYmMtOWY2YS00OTQzLWJkZWYtNzgyYmFhMDk1ZGQ1IiwiaWF0IjoxNzYzNzg4MDU1LCJleHAiOjE3NjM3ODg5NTV9.tsHqglCrR1rGF6uo4o0YVu6quzMd4AN27FxZNQwwzFw
+@REFRESH = paste_refresh_token_here
+
+### Health Check
+GET {{BASE}}/health
+
+### Sign Up
+POST {{BASE}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "loginId": "yeeunee",
+  "password": "123456789!",
+  "name": "김예은",
+  "gender": "F",
+  "phone": "010-3370-7588",
+  "birthDate": "2004-02-12",
+  "smsConsent": true,
+  "termsConsent": true
+}
+
+### Login
+POST {{BASE}}/api/auth/login
+Content-Type: application/json
+
+{
+  "loginId": "yeeunee",
+  "password": "123456789!"
+}
+
+### Get Profile
+GET {{BASE}}/api/me
+Authorization: Bearer {{ACCESS}}
+
+### Update Profile (any subset of fields)
+PATCH {{BASE}}/api/me
+Authorization: Bearer {{ACCESS}}
+Content-Type: application/json
+
+{
+  "name": "김예니",
+  "phone": "010-7588-3370",
+  "gender": "F",
+  "birthDate": "2001-01-01"
+}
+
+### Refresh Tokens
+POST {{BASE}}/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{REFRESH}}"
+}
+
+### Logout
+POST {{BASE}}/api/auth/logout
+Content-Type: application/json
+
+{
+  "refreshToken": "{{REFRESH}}"
+}
+
+### Change Password
+PATCH {{BASE}}/api/me/password
+Authorization: Bearer {{ACCESS}}
+Content-Type: application/json
+
+{
+  "currentPassword": "123456789!",
+  "newPassword": "987654321!"
+}
+
+### Social Login (Kakao)
+POST {{BASE}}/api/auth/social/login
+Content-Type: application/json
+
+{
+  "provider": "kakao",
+  "code": "kakao_authorization_code_here",
+  "redirectUri": "http://localhost:5173/auth/kakao/callback"
+}
+
+### Social Login (Google)
+POST {{BASE}}/api/auth/social/login
+Content-Type: application/json
+
+{
+  "provider": "google",
+  "accessToken": "google_user_access_token_here"
+}
+
+### Complete Social Consent
+POST {{BASE}}/api/auth/social/consent
+Content-Type: application/json
+
+{
+  "pendingToken": "pending_token_from_login_response",
+  "termsConsent": true,
+  "smsConsent": false,
+  "name": "소셜 사용자"
+}

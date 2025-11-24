@@ -8,26 +8,25 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
+  id            String   @id @default(cuid())
   name          String?
-  email         String?   @unique
-  nickname      String?
-  passwordHash  String?   @map("password_hash") // 소셜 로그인 시 null
+  loginId       String   @unique @map("login_id")
+  email         String?  @unique
+  passwordHash  String?  @map("password_hash") // social-only 계정은 null 허용
   gender        Gender?
   phone         String?
   birthDate     DateTime? @map("birth_date")
   smsConsent    Boolean   @default(false) @map("sms_consent")
   termsConsent  Boolean   @default(false) @map("terms_consent")
-  walletBalance Int       @default(0) @map("wallet_balance")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt
 
-  roomsCreated     Room[]              @relation("RoomCreator")
+  roomsCreated     Room[]             @relation("RoomCreator")
   roomParticipants RoomParticipant[]
-  reviews          Review[]            @relation("UserReviews")
-  reports          Report[]            @relation("UserReports")
-  walletTxs        WalletTransaction[]
-  settlements      RoomSettlement[]
+  reviews          Review[]           @relation("UserReviews")
+  reports          Report[]           @relation("UserReports")
+  refreshTokens    RefreshToken[]
+  socialAccounts   SocialAccount[]
 }
 
 model Room {
@@ -148,6 +147,22 @@ model Notice {
   content   String     @db.Text
   type      NoticeType
   createdAt DateTime   @default(now()) @map("created_at")
+}
+
+model SocialAccount {
+  id             String       @id @default(cuid())
+  provider       AuthProvider
+  providerUserId String       @map("provider_user_id")
+  userId         String       @map("user_id")
+  accessToken    String?      @map("access_token")
+  refreshToken   String?      @map("refresh_token")
+  profile        Json?
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
 }
 
 enum Gender {

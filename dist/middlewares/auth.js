@@ -9,11 +9,13 @@ function requireAuth(req, res, next) {
     }
     const token = header.slice('Bearer '.length);
     try {
-        const payload = (0, jwt_1.verifyJwt)(token);
+        const payload = (0, jwt_1.verifyAccessJwt)(token);
         req.user = payload;
+        req.userId = payload.sub;
         next();
     }
-    catch {
-        return res.status(401).json({ message: 'Unauthorized: invalid token' });
+    catch (err) {
+        const message = err?.message === 'INVALID_TOKEN_TYPE' ? 'Unauthorized: invalid token type' : 'Unauthorized: invalid token';
+        return res.status(401).json({ message });
     }
 }
