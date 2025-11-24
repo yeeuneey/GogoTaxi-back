@@ -128,7 +128,11 @@ const ROOM_STATUS_PROGRESS: Record<
   }
 > = {
   [RoomStatus.open]: { stage: 'recruiting', label: '모집 중' },
+  [RoomStatus.recruiting]: { stage: 'recruiting', label: '모집 중' },
   [RoomStatus.full]: { stage: 'ready', label: '모집 완료' },
+  [RoomStatus.dispatching]: { stage: 'ready', label: '배차 진행 중' },
+  [RoomStatus.success]: { stage: 'closed', label: '완료' },
+  [RoomStatus.failed]: { stage: 'closed', label: '실패' },
   [RoomStatus.closed]: { stage: 'closed', label: '마감' }
 };
 

@@ -34,6 +34,8 @@ async function login(input) {
         throw new Error('INVALID_CREDENTIALS');
     if (!user.passwordHash)
         throw new Error('INVALID_CREDENTIALS');
+    if (!user.passwordHash)
+        throw new Error('INVALID_CREDENTIALS');
     const ok = await bcrypt_1.default.compare(input.password, user.passwordHash);
     if (!ok)
         throw new Error('INVALID_CREDENTIALS');

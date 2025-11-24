@@ -1,50 +1,12 @@
 @BASE = http://localhost:8080
-@JWT = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWk2NzhocnMwMDA4MHlvNGM3MHN4bTB0IiwiZW1haWwiOiJ6YWltQGV4YW1wbGUuY29tIiwiaWF0IjoxNzYzNTcyNzIxLCJleHAiOjE3NjQxNzc1MjF9.HXsys5NVRjZPnQxVqMxtlIxRgwhifZKRX8AlD7S1hV4
-
-### 회원가입
-POST http://localhost:8080/api/auth/signup
-Content-Type: application/json
-
-{
-  "email": "zaim@example.com",
-  "password": "zaim0807!",
-  "nickname": "사임"
-}
-
-### 로그인
-POST http://localhost:8080/api/auth/login
-Content-Type: application/json
-
-{
-  "email": "zaim@example.com",
-  "password": "zaim0807!"
-}
-
-### 회원가입
-POST http://localhost:8080/api/auth/signup
-Content-Type: application/json
-
-{
-  "email": "yaya@example.com",
-  "password": "yaya0807!",
-  "nickname": "나야"
-}
-
-### 로그인
-POST http://localhost:8080/api/auth/login
-Content-Type: application/json
-
-{
-  "email": "yaya@example.com",
-  "password": "yaya0807!"
-}
+@JWT = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWljdWZ6YmQwMDBwbmdmaGJnazBhNjNrIiwiZW1haWwiOiJhaG5uZXVAZXhhbXBsZS5jb20iLCJpYXQiOjE3NjM5NzA3NDEsImV4cCI6MTc2NDU3NTU0MX0.5ahGIQa7c_i3PzZMn7j4gcxh2qP4Uksraug9FaYiERs
 
 ### 내 정보 조회
 GET http://localhost:8080/api/me
 Authorization: Bearer {{JWT}}
 
 ### 실제 회원가입
-POST http://34.207.148.130:8080/api/auth/signup
+POST http://localhost:8080/api/auth/signup
 Content-Type: application/json
 
 {
@@ -54,7 +16,7 @@ Content-Type: application/json
 }
 
 ### 실제 로그인
-POST http://34.207.148.130:8080/api/auth/login
+POST http://localhost:8080/api/auth/login
 Content-Type: application/json
 
 {
@@ -94,7 +56,7 @@ Content-Type: application/json
 ### 1. 방 생성 (로컬)
 ### - JWT는 위에서 로그인 해서 직접 복사해 넣기 (@JWT 갱신 필수!)
 POST {{BASE}}/api/rooms
-Authorization: Bearer {{JWT}}
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWljdWZ6YmQwMDBwbmdmaGJnazBhNjNrIiwiZW1haWwiOiJhaG5uZXVAZXhhbXBsZS5jb20iLCJpYXQiOjE3NjM5NzA0MjUsImV4cCI6MTc2NDU3NTIyNX0.JPjUyEh6zgw0ue2A1a1tSmWGlBVOHNeg8hJ4GhOViEU
 Content-Type: application/json
 
 {
@@ -114,7 +76,7 @@ Content-Type: application/json
 ### ⚠ 방 생성 후, 응답 JSON에서 "id" 값을 복사해서
 ###    아래 @ROOM_ID 자리에 넣어줘야 해
 
-@ROOM_ID = cmi67ebss000m0yo4hk22umph
+@ROOM_ID = cmicun6po0001ngvnwhud00xq
 
 
 ### 2. 방 목록 조회 (전체)

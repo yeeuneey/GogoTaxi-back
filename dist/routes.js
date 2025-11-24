@@ -29,4 +29,3 @@ exports.router.use('/reports', routes_7.reportRouter);
 exports.router.get('/me', auth_1.requireAuth, (req, res) => {
     res.json({ me: req.user });
 });
-module.exports = { router: exports.router };
