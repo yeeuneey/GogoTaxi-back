@@ -2,15 +2,19 @@
 
 @JWT = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWlkNGVnYjIwMDA1MHkwd2FkNTh6Z29yIiwibG9naW5JZCI6Im1pbmciLCJ0eXBlIjoiYWNjZXNzIiwianRpIjoiYzUwYjBiNGMtMWE2Yy00YzY2LWJkMjMtN2M0OGUxYzkzYjRmIiwiaWF0IjoxNzYzOTk4MDk2LCJleHAiOjE3NjM5OTg5OTZ9.wHTA2gFavlAjIO2FGsGT2boql5njUZSobme7QwqaO0A
 
-### 회원가입
+@ACCESS = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWlkNGg5dnkwMDAwcGg0OG1jZmU0cnIyIiwibG9naW5JZCI6InllZXVuZWUiLCJ0eXBlIjoiYWNjZXNzIiwianRpIjoiZTcwMGZjMTQtM2Y2MS00MTU4LWE0YWYtN2YzNTI3M2M3MDBhIiwiaWF0IjoxNzY0MTY5NjExLCJleHAiOjE3NjQxNzA1MTF9.H0EWDiZO9u5rNO7uF9w6RIQhcSdno5TGBMarWhdzP5A
+@REFRESH = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWlkNGg5dnkwMDAwcGg0OG1jZmU0cnIyIiwibG9naW5JZCI6InllZXVuZWUiLCJ0eXBlIjoicmVmcmVzaCIsImp0aSI6ImY5M2MwODNmLTA2ZTItNDYwMy05N2YzLWNmZjc2OTA0NjVlMiIsImlhdCI6MTc2NDE2OTYxMSwiZXhwIjoxNzY1Mzc5MjExfQ.0mnj0eDQj_Nb-KMYnDZUkQF5LQR3hXIYygrvLqbbOnM
+### Health Check
+GET {{BASE}}/health
 
-POST http://localhost:8080/api/auth/signup
+### Sign Up
+POST {{BASE}}/api/auth/signup
 Content-Type: application/json
 
 {
-  "loginId": "saim",
+  "loginId": "yeeunee",
   "password": "123456789!",
-  "name": "사임",
+  "name": "김예은",
   "gender": "F",
   "phone": "010-3370-7588",
   "birthDate": "2004-02-12",
@@ -18,149 +22,86 @@ Content-Type: application/json
   "termsConsent": true
 }
 
-
-
-
-### 로그인
-
-POST http://localhost:8080/api/auth/login
+### Login
+POST {{BASE}}/api/auth/login
 Content-Type: application/json
 
 {
-  "loginId": "saim",
+  "loginId": "yeeunee",
   "password": "123456789!"
 }
 
+### Get Profile
+GET {{BASE}}/api/me
+Authorization: Bearer {{ACCESS}}
 
-
-
-### 회원가입
-
-POST http://localhost:8080/api/auth/signup
-
+### Update Profile (any subset of fields)
+PATCH {{BASE}}/api/me
+Authorization: Bearer {{ACCESS}}
 Content-Type: application/json
 
-
-
 {
-
-  "email": "yaya@example.com",
-
-  "password": "yaya0807!",
-
-  "nickname": "나야"
-
+  "name": "김예니",
+  "phone": "010-7588-3370",
+  "gender": "F",
+  "birthDate": "2001-01-01"
 }
 
-
-
-### 로그인
-
-POST http://localhost:8080/api/auth/login
-
+### Refresh Tokens
+POST {{BASE}}/api/auth/refresh
 Content-Type: application/json
 
-
-
 {
-
-  "email": "yaya@example.com",
-
-  "password": "yaya0807!"
-
+  "refreshToken": "{{REFRESH}}"
 }
 
-
-            
-### 내 정보 조회
-
-GET http://localhost:8080/api/me
-Authorization: Bearer {{JWT}}
-
-
-
-### 실제 회원가입
-POST http://localhost:8080/api/auth/signup
+### Logout
+POST {{BASE}}/api/auth/logout
 Content-Type: application/json
 
-
-
 {
-
-  "email": "ahnneu@example.com",
-
-  "password": "ahnneu1234",
-
-  "nickname": "안느"
-
+  "refreshToken": "{{REFRESH}}"
 }
 
-
-
-### 실제 로그인
-POST http://localhost:8080/api/auth/login
+### Change Password
+PATCH {{BASE}}/api/me/password
+Authorization: Bearer {{ACCESS}}
 Content-Type: application/json
 
-
-
 {
-
-  "email": "ahnneu@example.com",
-
-  "password": "ahnneu1234"
-
+  "currentPassword": "123456789!",
+  "newPassword": "987654321!"
 }
 
-
-
-### 토큰 테스트
-
-GET http://34.207.148.130:8080/api/me
-
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWh4OTBpbWEwMDAwcGgxb21rMDQwbzg3IiwiZW1haWwiOiJhaG5uZXVAZXhhbXBsZS5jb20iLCJpYXQiOjE3NjMwMjc1NjksImV4cCI6MTc2MzYzMjM2OX0.-RdxZDVn8qHt43zv5M__XbvUaepl7gN29xMKhJNHCBk
-
-
-
-### 실제 회원가입
-
-POST http://34.207.148.130:8080/api/auth/signup
-
+### Social Login (Kakao)
+POST {{BASE}}/api/auth/social/login
 Content-Type: application/json
 
-
-
 {
-
-  "email": "yeye@example.com",
-
-  "password": "yeye1234",
-
-  "nickname": "예예"
-
+  "provider": "kakao",
+  "code": "kakao_authorization_code_here",
+  "redirectUri": "http://localhost:5173/auth/kakao/callback"
 }
 
-
-
-
-
-### 실제 회원가입
-
-POST http://localhost:8080/api/auth/signup
-
+### Social Login (Google)
+POST {{BASE}}/api/auth/social/login
 Content-Type: application/json
 
-
-
 {
-
-  "email": "ahnneu@naver.com",
-
-  "password": "tkddk128!!",
-
-  "nickname": "안느"
-
+  "provider": "google",
+  "accessToken": "google_user_access_token_here"
 }
 
+### Complete Social Consent
+POST {{BASE}}/api/auth/social/consent
+Content-Type: application/json
+
+{
+  "pendingToken": "pending_token_from_login_response",
+  "termsConsent": true,
+  "smsConsent": false,
+  "name": "소셜 사용자"
+}
 
 
 ########################################################
@@ -367,106 +308,3 @@ Authorization: Bearer {{JWT}}
 ### 나의 방 목록
 GET {{BASE}}/api/rooms/mine
 Authorization: Bearer {{JWT}}
-
-@BASE = http://localhost:8080
-@ACCESS = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWk1b3g1NWEwMDAwcGhrd3Y0N2pkcm5tIiwibG9naW5JZCI6InllZXVuZWUiLCJ0eXBlIjoiYWNjZXNzIiwianRpIjoiNjNmZGEwYmMtOWY2YS00OTQzLWJkZWYtNzgyYmFhMDk1ZGQ1IiwiaWF0IjoxNzYzNzg4MDU1LCJleHAiOjE3NjM3ODg5NTV9.tsHqglCrR1rGF6uo4o0YVu6quzMd4AN27FxZNQwwzFw
-@REFRESH = paste_refresh_token_here
-
-### Health Check
-GET {{BASE}}/health
-
-### Sign Up
-POST {{BASE}}/api/auth/signup
-Content-Type: application/json
-
-{
-  "loginId": "ming",
-  "password": "123456789!",
-  "name": "사임",
-  "gender": "F",
-  "phone": "010-3370-7588",
-  "birthDate": "2004-02-12",
-  "smsConsent": true,
-  "termsConsent": true
-}
-
-### Login
-POST {{BASE}}/api/auth/login
-Content-Type: application/json
-
-{
-  "loginId": "ming",
-  "password": "123456789!"
-}
-
-### Get Profile
-GET {{BASE}}/api/me
-Authorization: Bearer {{ACCESS}}
-
-### Update Profile (any subset of fields)
-PATCH {{BASE}}/api/me
-Authorization: Bearer {{ACCESS}}
-Content-Type: application/json
-
-{
-  "name": "김예니",
-  "phone": "010-7588-3370",
-  "gender": "F",
-  "birthDate": "2001-01-01"
-}
-
-### Refresh Tokens
-POST {{BASE}}/api/auth/refresh
-Content-Type: application/json
-
-{
-  "refreshToken": "{{REFRESH}}"
-}
-
-### Logout
-POST {{BASE}}/api/auth/logout
-Content-Type: application/json
-
-{
-  "refreshToken": "{{REFRESH}}"
-}
-
-### Change Password
-PATCH {{BASE}}/api/me/password
-Authorization: Bearer {{ACCESS}}
-Content-Type: application/json
-
-{
-  "currentPassword": "123456789!",
-  "newPassword": "987654321!"
-}
-
-### Social Login (Kakao)
-POST {{BASE}}/api/auth/social/login
-Content-Type: application/json
-
-{
-  "provider": "kakao",
-  "code": "kakao_authorization_code_here",
-  "redirectUri": "http://localhost:5173/auth/kakao/callback"
-}
-
-### Social Login (Google)
-POST {{BASE}}/api/auth/social/login
-Content-Type: application/json
-
-{
-  "provider": "google",
-  "accessToken": "google_user_access_token_here"
-}
-
-### Complete Social Consent
-POST {{BASE}}/api/auth/social/consent
-Content-Type: application/json
-
-{
-  "pendingToken": "pending_token_from_login_response",
-  "termsConsent": true,
-  "smsConsent": false,
-  "name": "소셜 사용자"
-}
