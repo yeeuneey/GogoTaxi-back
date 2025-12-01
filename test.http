@@ -1,7 +1,8 @@
 @BASE = http://localhost:8080
 
-@ACCESS = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWlkNGg5dnkwMDAwcGg0OG1jZmU0cnIyIiwibG9naW5JZCI6InllZXVuZWUiLCJ0eXBlIjoiYWNjZXNzIiwianRpIjoiY2JiZTY5ZDQtMTM2Yi00ZmY3LWI5MjctOGJiMWY4MTc1NDBlIiwiaWF0IjoxNzY0NTA5OTEzLCJleHAiOjE3NjQ1MTA4MTN9.C1PmAQu69As2ChJjgWX25J8Y67D61JIUYcsHTyINsl0
-@REFRESH = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWlkNGg5dnkwMDAwcGg0OG1jZmU0cnIyIiwibG9naW5JZCI6InllZXVuZWUiLCJ0eXBlIjoicmVmcmVzaCIsImp0aSI6ImQwYzRjYTRkLTNhZjYtNGU4MC1iMTY1LTMzNTRiYTRhYjIwMSIsImlhdCI6MTc2NDUwOTkxMywiZXhwIjoxNzY1NzE5NTEzfQ.SjOLlrcxrwBi_RRo07bQuxR23xVfsHfjdFdZuQbUclU
+@ACCESS = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWlkNGg5dnkwMDAwcGg0OG1jZmU0cnIyIiwibG9naW5JZCI6InllZXVuZWUiLCJ0eXBlIjoiYWNjZXNzIiwianRpIjoiZDQyM2QwNTAtNmY2Ni00MmVmLWJjYWMtNTY4OWY3M2RkZTg4IiwiaWF0IjoxNzY0NTg4MzY0LCJleHAiOjE3NjQ1ODkyNjR9.3CGQvgz2O06kNKWYdIH0jp3f6k-PQ_witI2-2bOCHnM
+@REFRESH = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWlkNGg5dnkwMDAwcGg0OG1jZmU0cnIyIiwibG9naW5JZCI6InllZXVuZWUiLCJ0eXBlIjoicmVmcmVzaCIsImp0aSI6ImJhMGE0OTliLWFhNzgtNDM5Zi1iMTU1LTNmMzc0OGU4MWE4YSIsImlhdCI6MTc2NDU4ODM2NCwiZXhwIjoxNzY1Nzk3OTY0fQ.QcyEKDEV3jKMcdbcs7A3ri3k9M-8JdJDcjrep5ZBWCg
+@GEMINI_MODEL = gemini-1.5-flash-latest
 ### Health Check
 GET {{BASE}}/health
 
@@ -327,3 +328,50 @@ Content-Type: application/json
   "carNumber": "12가 3456",
   "note": "기사님 곧 도착"
 }
+
+########################################################
+
+### Gemini ��� ���� �ݾ� ���� + ������ �ڵ����� (���)
+POST {{BASE}}/api/payments/ocr/estimate
+Authorization: Bearer {{ACCESS}}
+Content-Type: application/json
+
+{
+  "imageBase64": "iVBORw0KGgoAAAANSUhEUgAAAAUA...", // png/jpg base64
+  "mimeType": "image/png",
+  "roomId": "{{ROOM_ID}}",
+  "model": "{{GEMINI_MODEL}}"
+}
+
+### gemini 결제??
+POST {{BASE}}/api/payments/ocr/estimate
+Authorization: Bearer {{ACCESS}}
+Content-Type: application/json
+
+{
+  "imageBase64": "<실제 base64 전체>",
+  "mimeType": "image/png",
+  "model": "models/gemini-2.0-flash-001",
+  "apiVersion": "v1"
+}
+
+########################################################
+
+### 지갑 영수증 OCR + 자동충전 (multipart 업로드)
+# FormData로 이미지 파일을 보낼 때 사용 예시입니다.
+# 파일 경로는 로컬 캡처 이미지로 교체하세요.
+POST {{BASE}}/api/wallet/receipt/amount
+Authorization: Bearer {{ACCESS}}
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="image"; filename="uber_capture.png"
+Content-Type: image/png
+
+< C:\Users\82103\Downloads\uber_capture.png
+--boundary--
+
+@GEMINI_API_KEY=AIzaSyA1plfW6fG-wG2yVJxacm-Qf7ee1Rwc0PQ
+
+### listModels
+GET https://generativelanguage.googleapis.com/v1/models?key={{GEMINI_API_KEY}}

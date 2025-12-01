@@ -107,6 +107,29 @@ authRouter.post('/logout', async (req, res) => {
   }
 });
 
+// Convenience alias to fetch profile via /auth/me for clients expecting that path.
+authRouter.get('/me', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'Unauthorized: missing access token' });
+    }
+    // reuse existing /me route logic via request to getProfile
+    const { getProfile } = await import('./service');
+    const { verifyAccessJwt } = await import('../../lib/jwt');
+    const payload = verifyAccessJwt(authHeader.slice('Bearer '.length));
+    const me = await getProfile(payload.sub);
+    return res.json({ me });
+  } catch (e: any) {
+    if (e?.message === 'USER_NOT_FOUND') return res.status(404).json({ message: 'User not found' });
+    if (e?.name === 'JsonWebTokenError' || e?.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Unauthorized: invalid token' });
+    }
+    console.error(e);
+    return res.status(500).json({ message: 'Internal error' });
+  }
+});
+
 authRouter.get('/social/kakao/start', (req, res) => {
   if (!ENV.KAKAO_REST_API_KEY || !ENV.KAKAO_REDIRECT_URI) {
     return res.status(500).json({ message: 'Kakao OAuth not configured on server' });

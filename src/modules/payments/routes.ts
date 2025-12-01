@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { requireAuth } from '../../middlewares/auth';
 import { listMockPayments, mockCharge, mockRefund } from './mockClient';
 import { createPaymentSession, listPaymentSessions, processPaymentEvent } from './service';
+import { extractAmountFromImage } from './gemini';
+import { ensureBalanceForDebit } from '../wallet/service';
 
 const MOCK_WEBHOOK_SECRET = process.env.PAYMENTS_MOCK_WEBHOOK_SECRET ?? 'mock-secret';
 
@@ -34,6 +36,50 @@ paymentsRouter.use(requireAuth);
 
 paymentsRouter.get('/mock', (_req, res) => {
   res.json({ payments: listMockPayments() });
+});
+
+paymentsRouter.post('/ocr/estimate', async (req, res) => {
+  try {
+    const body = z
+      .object({
+        imageBase64: z.string().min(10),
+        mimeType: z.string().min(3).optional(),
+        roomId: z.string().cuid().optional(),
+        model: z.string().min(3).optional(),
+        apiVersion: z.string().min(2).optional()
+      })
+      .parse(req.body);
+
+    const result = await extractAmountFromImage(body.imageBase64, body.mimeType, body.model, body.apiVersion);
+    if (result.amount == null) {
+      console.warn('OCR amount failed', { reason: result.reason, rawText: result.rawText?.slice(0, 200) });
+      return res.status(422).json({
+        message: 'Failed to recognize amount from image',
+        reason: result.reason,
+        rawText: result.rawText
+      });
+    }
+
+    const amount = Math.round(result.amount);
+    const { autoTopUp, deficit, payment } = await ensureBalanceForDebit(req.user!.sub, amount, {
+      roomId: body.roomId,
+      reason: 'image_estimate'
+    });
+
+    return res.json({
+      amount,
+      autoTopUp,
+      deficit,
+      payment,
+      rawText: result.rawText
+    });
+  } catch (e: any) {
+    if (e?.name === 'ZodError') {
+      return res.status(400).json({ message: 'Validation failed', issues: e.issues });
+    }
+    console.error(e);
+    return res.status(500).json({ message: 'Failed to process image payment estimate' });
+  }
 });
 
 paymentsRouter.get('/mock/sessions', (req, res) => {

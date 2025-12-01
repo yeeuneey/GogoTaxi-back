@@ -31,8 +31,14 @@ app.use(
 );
 app.use(
   express.raw({
-    type: () => true,
-    limit: '1mb'
+    type: (req) => {
+      const ct = req.headers['content-type'] || '';
+      if (typeof ct === 'string' && ct.toLowerCase().startsWith('multipart/form-data')) {
+        return false;
+      }
+      return true;
+    },
+    limit: '5mb'
   })
 );
 
