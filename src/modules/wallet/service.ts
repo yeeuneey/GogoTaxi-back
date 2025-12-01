@@ -71,8 +71,9 @@ export async function ensureBalanceForDebit(userId: string, amount: number, opts
     return { autoTopUp: false, deficit: 0 };
   }
   const deficit = amount - current;
+  const topUpAmount = Math.ceil(deficit / 10000) * 10000;
   const payment = mockCharge({
-    amount: deficit,
+    amount: topUpAmount,
     currency: 'KRW',
     metadata: { userId, roomId: opts?.roomId, reason: opts?.reason }
   });
@@ -80,8 +81,8 @@ export async function ensureBalanceForDebit(userId: string, amount: number, opts
     userId,
     roomId: opts?.roomId,
     kind: WalletTxKind.auto_top_up,
-    amount: deficit,
+    amount: topUpAmount,
     idempotencyKey: `auto_top_up:${opts?.reason ?? 'debit'}:${opts?.roomId ?? 'general'}:${userId}:${payment.id}`
   });
-  return { autoTopUp: true, deficit, payment };
+  return { autoTopUp: true, deficit, payment, topUpAmount };
 }

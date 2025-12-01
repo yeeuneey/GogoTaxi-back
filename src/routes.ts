@@ -19,6 +19,8 @@ import { notificationsRouter } from './modules/notifications/routes';
 // 후기 / 신고
 import { reviewRouter } from './modules/review/routes';
 import { reportRouter } from './modules/report/routes';
+// 이용 기록
+import { rideHistoryRouter } from './modules/rideHistory/routes';
 
 export const router = Router();
 
@@ -44,6 +46,7 @@ router.use(roomRouter);
    알림
 =============================================== */
 router.use('/notifications', notificationsRouter);
+router.use('/rides', rideHistoryRouter);
 
 /* ============================================
    후기 / 신고

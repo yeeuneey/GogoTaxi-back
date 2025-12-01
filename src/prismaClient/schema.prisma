@@ -1,0 +1,273 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/prismaClient"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  loginId       String    @unique @map("login_id")
+  email         String?   @unique
+  passwordHash  String?   @map("password_hash") // social-only 계정은 null 허용
+  gender        Gender?
+  phone         String?
+  birthDate     DateTime? @map("birth_date")
+  smsConsent    Boolean   @default(false) @map("sms_consent")
+  termsConsent  Boolean   @default(false) @map("terms_consent")
+  walletBalance Int       @default(0) @map("wallet_balance")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt
+
+  roomsCreated       Room[]              @relation("RoomCreator")
+  roomParticipants   RoomParticipant[]
+  reviews            Review[]            @relation("UserReviews")
+  reports            Report[]            @relation("UserReports")
+  refreshTokens      RefreshToken[]
+  socialAccounts     SocialAccount[]
+  walletTransactions WalletTransaction[]
+  settlements        RoomSettlement[]
+  rideHistory        RideHistory[]
+}
+
+model Room {
+  id               String           @id @default(cuid())
+  title            String
+  creatorId        String           @map("creator_id")
+  creator          User             @relation("RoomCreator", fields: [creatorId], references: [id])
+  departureLabel   String           @map("departure_label")
+  departureLat     Decimal          @map("departure_lat") @db.Decimal(10, 6)
+  departureLng     Decimal          @map("departure_lng") @db.Decimal(10, 6)
+  arrivalLabel     String           @map("arrival_label")
+  arrivalLat       Decimal          @map("arrival_lat") @db.Decimal(10, 6)
+  arrivalLng       Decimal          @map("arrival_lng") @db.Decimal(10, 6)
+  departureTime    DateTime         @map("departure_time")
+  capacity         Int
+  priority         RoomPriority
+  status           RoomStatus       @default(open)
+  estimatedFare    Int?             @map("estimated_fare")
+  actualFare       Int?             @map("actual_fare")
+  estimatedEta     DateTime?        @map("estimated_eta")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  settlementStatus SettlementStatus @default(pending) @map("settlement_status")
+  noShowUserIds    String[]         @default([]) @map("no_show_user_ids")
+
+  participants       RoomParticipant[]
+  dispatchedTaxi     DispatchedTaxi?
+  reviews            Review[]
+  reports            Report[]
+  settlements        RoomSettlement[]
+  walletTransactions WalletTransaction[]
+  rideHistory        RideHistory[]
+}
+
+model RoomParticipant {
+  id         String   @id @default(cuid())
+  roomId     String   @map("room_id")
+  userId     String   @map("user_id")
+  seatNumber Int?     @map("seat_number")
+  joinedAt   DateTime @default(now()) @map("joined_at")
+
+  room Room @relation(fields: [roomId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([roomId, userId])
+}
+
+model WalletTransaction {
+  id             String         @id @default(cuid())
+  userId         String         @map("user_id")
+  user           User           @relation(fields: [userId], references: [id])
+  roomId         String?        @map("room_id")
+  room           Room?          @relation(fields: [roomId], references: [id])
+  idempotencyKey String?        @unique @map("idempotency_key")
+  kind           WalletTxKind
+  amount         Int
+  currency       String         @default("KRW")
+  status         WalletTxStatus @default(success)
+  metadata       Json?
+  createdAt      DateTime       @default(now()) @map("created_at")
+}
+
+model RoomSettlement {
+  id           String                 @id @default(cuid())
+  roomId       String                 @map("room_id")
+  room         Room                   @relation(fields: [roomId], references: [id])
+  userId       String                 @map("user_id")
+  user         User                   @relation(fields: [userId], references: [id])
+  role         SettlementRole
+  deposit      Int                    @default(0)
+  extraCollect Int                    @default(0) @map("extra_collect")
+  refund       Int                    @default(0)
+  netAmount    Int                    @default(0) @map("net_amount") // +징수, -환급
+  noShow       Boolean                @default(false) @map("no_show")
+  note         String?
+  status       SettlementRecordStatus @default(pending)
+  createdAt    DateTime               @default(now()) @map("created_at")
+
+  @@unique([roomId, userId])
+}
+
+model RideHistory {
+  id           String         @id @default(cuid())
+  roomId       String         @map("room_id")
+  room         Room           @relation(fields: [roomId], references: [id])
+  userId       String         @map("user_id")
+  user         User           @relation(fields: [userId], references: [id])
+  role         SettlementRole
+  deposit      Int            @default(0)
+  extraCollect Int            @default(0) @map("extra_collect")
+  refund       Int            @default(0)
+  netAmount    Int            @default(0) @map("net_amount")
+  actualFare   Int            @map("actual_fare")
+  settledAt    DateTime       @default(now()) @map("settled_at")
+  createdAt    DateTime       @default(now()) @map("created_at")
+
+  @@unique([roomId, userId])
+  @@index([userId])
+}
+
+model Review {
+  id             Int      @id @default(autoincrement())
+  roomId         String   @map("room_id")
+  reviewerUserId String   @map("reviewer_user_id")
+  rating         Int
+  comment        String?  @db.Text
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  room     Room @relation(fields: [roomId], references: [id])
+  reviewer User @relation("UserReviews", fields: [reviewerUserId], references: [id])
+}
+
+model Report {
+  id                 Int      @id @default(autoincrement())
+  roomId             String   @map("room_id")
+  reporterUserId     String   @map("reporter_user_id")
+  reportedSeatNumber Int      @map("reported_seat_number")
+  message            String   @db.Text
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  room     Room @relation(fields: [roomId], references: [id])
+  reporter User @relation("UserReports", fields: [reporterUserId], references: [id])
+}
+
+model DispatchedTaxi {
+  id         Int    @id @default(autoincrement())
+  roomId     String @unique @map("room_id")
+  driverName String @map("driver_name")
+  carModel   String @map("car_model")
+  carNumber  String @map("car_number")
+
+  room Room @relation(fields: [roomId], references: [id])
+}
+
+model Notice {
+  id        String     @id @default(cuid())
+  title     String
+  summary   String
+  content   String     @db.Text
+  type      NoticeType
+  createdAt DateTime   @default(now()) @map("created_at")
+}
+
+model SocialAccount {
+  id             String       @id @default(cuid())
+  provider       AuthProvider
+  providerUserId String       @map("provider_user_id")
+  userId         String       @map("user_id")
+  accessToken    String?      @map("access_token")
+  refreshToken   String?      @map("refresh_token")
+  profile        Json?
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+}
+
+model RefreshToken {
+  id            String    @id @default(cuid())
+  userId        String    @map("user_id")
+  user          User      @relation(fields: [userId], references: [id])
+  tokenHash     String    @unique @map("token_hash")
+  expiresAt     DateTime  @map("expires_at")
+  revokedAt     DateTime? @map("revoked_at")
+  revokedReason String?   @map("revoked_reason")
+  userAgent     String?   @map("user_agent")
+  ip            String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+}
+
+enum Gender {
+  M
+  F
+}
+
+enum RoomPriority {
+  time
+  seats
+}
+
+// 두 버전의 상태값을 모두 포함해서 합침
+enum RoomStatus {
+  open
+  full
+  closed
+  recruiting
+  dispatching
+  success
+  failed
+}
+
+enum SettlementStatus {
+  pending
+  deposit_collected
+  host_paid
+  settling
+  settled
+}
+
+enum WalletTxKind {
+  top_up
+  auto_top_up
+  hold_deposit
+  host_charge
+  extra_collect
+  refund
+  host_refund
+  adjustment
+}
+
+enum WalletTxStatus {
+  pending
+  success
+  failed
+}
+
+enum SettlementRole {
+  host
+  guest
+}
+
+enum NoticeType {
+  update
+  info
+  maintenance
+}
+
+enum SettlementRecordStatus {
+  pending
+  settling
+  settled
+  failed
+}
+
+enum AuthProvider {
+  kakao
+  google
+}

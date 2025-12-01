@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/prismaClient"
 }
 
 datasource db {
@@ -30,6 +31,7 @@ model User {
   socialAccounts   SocialAccount[]
   walletTransactions WalletTransaction[]
   settlements        RoomSettlement[]
+  rideHistory        RideHistory[]
 }
 
 model Room {
@@ -60,6 +62,7 @@ model Room {
   reports            Report[]
   settlements        RoomSettlement[]
   walletTransactions WalletTransaction[]
+  rideHistory        RideHistory[]
 }
 
 model RoomParticipant {
@@ -107,6 +110,25 @@ model RoomSettlement {
   createdAt    DateTime               @default(now()) @map("created_at")
 
   @@unique([roomId, userId])
+}
+
+model RideHistory {
+  id           String          @id @default(cuid())
+  roomId       String          @map("room_id")
+  room         Room            @relation(fields: [roomId], references: [id])
+  userId       String          @map("user_id")
+  user         User            @relation(fields: [userId], references: [id])
+  role         SettlementRole
+  deposit      Int             @default(0)
+  extraCollect Int             @default(0) @map("extra_collect")
+  refund       Int             @default(0)
+  netAmount    Int             @default(0) @map("net_amount")
+  actualFare   Int             @map("actual_fare")
+  settledAt    DateTime        @default(now()) @map("settled_at")
+  createdAt    DateTime        @default(now()) @map("created_at")
+
+  @@unique([roomId, userId])
+  @@index([userId])
 }
 
 model Review {

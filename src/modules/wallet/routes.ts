@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../middlewares/auth';
 import { ChargeDto, TopUpDto } from './dto';
-import { getBalance, recordTransaction } from './service';
+import { ensureBalanceForDebit, getBalance, recordTransaction } from './service';
 import { WalletTxKind } from '@prisma/client';
 
 export const walletRouter = Router();
@@ -43,6 +43,12 @@ walletRouter.post('/charge', async (req, res) => {
   try {
     const input = ChargeDto.parse(req.body);
     const sign = input.kind === 'refund' || input.kind === 'host_refund' ? 1 : -1;
+    if (sign === -1 && !input.allowNegative) {
+      await ensureBalanceForDebit(req.user!.sub, input.amount, {
+        roomId: input.roomId,
+        reason: input.kind
+      });
+    }
     const tx = await recordTransaction({
       userId: req.user!.sub,
       roomId: input.roomId,

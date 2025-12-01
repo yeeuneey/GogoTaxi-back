@@ -18,6 +18,15 @@ async function assertUserCanReview(roomId: string, userId: string) {
 
 export async function createReview(userId: string, input: CreateReviewDto) {
   await assertUserCanReview(input.roomId, userId);
+  const existing = await prisma.review.findFirst({
+    where: { roomId: input.roomId, reviewerUserId: userId }
+  });
+  if (existing) {
+    return prisma.review.update({
+      where: { id: existing.id },
+      data: { rating: input.rating, comment: input.comment }
+    });
+  }
   return prisma.review.create({
     data: {
       roomId: input.roomId,
