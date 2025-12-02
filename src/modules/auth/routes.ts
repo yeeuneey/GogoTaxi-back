@@ -1,5 +1,7 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { SignUpDto, LoginDto, RefreshTokenDto, SocialLoginDto, SocialConsentDto } from './dto';
+import { prisma } from '../../lib/prisma';
 import { signUp, login, refreshTokens, logout, socialLogin, completeSocialConsent } from './service';
 import { ENV } from '../../config/env';
 
@@ -27,6 +29,10 @@ const parseRequestMeta = (req: any) => ({
   ip: (typeof req.ip === 'string' ? req.ip : undefined) ?? req.socket?.remoteAddress ?? undefined
 });
 
+const LoginIdCheckDto = z.object({
+  loginId: z.string().min(4).max(30)
+});
+
 authRouter.post('/signup', async (req, res) => {
   try {
     const payload = extractPayload(req.body, req.query as Record<string, any>);
@@ -41,6 +47,18 @@ authRouter.post('/signup', async (req, res) => {
   }
 });
 
+authRouter.get('/check-id', async (req, res) => {
+  try {
+    const input = LoginIdCheckDto.parse({ loginId: req.query.loginId });
+    const existing = await prisma.user.findUnique({ where: { loginId: input.loginId } });
+    return res.json({ loginId: input.loginId, available: !existing });
+  } catch (e: any) {
+    if (e?.name === 'ZodError') return res.status(400).json({ message: 'Validation failed', issues: e.issues });
+    console.error(e);
+    res.status(500).json({ message: 'Internal error' });
+  }
+});
+
 authRouter.post('/login', async (req, res) => {
   try {
     const payload = extractPayload(req.body, req.query as Record<string, any>);
@@ -49,7 +67,11 @@ authRouter.post('/login', async (req, res) => {
     res.json(result);
   } catch (e: any) {
     if (e?.message === 'INVALID_CREDENTIALS') return res.status(401).json({ message: 'Invalid ID or password' });
-    if (e?.name === 'ZodError') return res.status(400).json({ message: 'Validation failed', issues: e.issues });
+    if (e?.name === 'ZodError') {
+      // Debug log to surface bad payloads from the client
+      console.error('login validation failed', { issues: e.issues, body: req.body });
+      return res.status(400).json({ message: 'Validation failed', issues: e.issues });
+    }
     console.error(e);
     res.status(500).json({ message: 'Internal error' });
   }
@@ -82,6 +104,29 @@ authRouter.post('/logout', async (req, res) => {
     if (e?.name === 'ZodError') return res.status(400).json({ message: 'Validation failed', issues: e.issues });
     console.error(e);
     res.status(500).json({ message: 'Internal error' });
+  }
+});
+
+// Convenience alias to fetch profile via /auth/me for clients expecting that path.
+authRouter.get('/me', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'Unauthorized: missing access token' });
+    }
+    // reuse existing /me route logic via request to getProfile
+    const { getProfile } = await import('./service');
+    const { verifyAccessJwt } = await import('../../lib/jwt');
+    const payload = verifyAccessJwt(authHeader.slice('Bearer '.length));
+    const me = await getProfile(payload.sub);
+    return res.json({ me });
+  } catch (e: any) {
+    if (e?.message === 'USER_NOT_FOUND') return res.status(404).json({ message: 'User not found' });
+    if (e?.name === 'JsonWebTokenError' || e?.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Unauthorized: invalid token' });
+    }
+    console.error(e);
+    return res.status(500).json({ message: 'Internal error' });
   }
 });
 

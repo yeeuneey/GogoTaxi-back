@@ -155,13 +155,29 @@ async function fetchKakaoProfile(accessToken) {
     const id = data?.id ? String(data.id) : '';
     if (!id)
         throw new Error('KAKAO_PROFILE_MISSING');
-    const name = data?.kakao_account?.profile?.nickname ??
-        data?.properties?.nickname ??
-        data?.kakao_account?.profile_nickname ??
-        undefined;
-    const email = data?.kakao_account?.email ?? undefined;
-    const profile = { id, name, email };
+    // Keep consent minimal: rely only on Kakao user id.
+    const profile = { id };
     return { profile, raw: data };
+}
+async function exchangeKakaoCodeForAccessToken(code, redirectUri) {
+    if (!env_1.ENV.KAKAO_REST_API_KEY || !env_1.ENV.KAKAO_REDIRECT_URI) {
+        throw new Error('KAKAO_OAUTH_NOT_CONFIGURED');
+    }
+    const params = new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: env_1.ENV.KAKAO_REST_API_KEY,
+        redirect_uri: redirectUri || env_1.ENV.KAKAO_REDIRECT_URI,
+        code
+    });
+    if (env_1.ENV.KAKAO_CLIENT_SECRET) {
+        params.append('client_secret', env_1.ENV.KAKAO_CLIENT_SECRET);
+    }
+    const { data } = await axios_1.default.post('https://kauth.kakao.com/oauth/token', params, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
+    if (!data?.access_token)
+        throw new Error('KAKAO_TOKEN_EXCHANGE_FAILED');
+    return { accessToken: data.access_token, refreshToken: data.refresh_token };
 }
 async function fetchGoogleProfileFromAccessToken(accessToken) {
     const { data } = await axios_1.default.get('https://www.googleapis.com/oauth2/v3/userinfo', {
@@ -195,13 +211,18 @@ async function exchangeGoogleCodeForTokens(code, redirectUri) {
 }
 async function resolveProviderProfile(input) {
     if (input.provider === 'kakao') {
-        if (!input.accessToken)
+        if (!input.accessToken && !input.code)
             throw new Error('KAKAO_ACCESS_TOKEN_REQUIRED');
-        const { profile, raw } = await fetchKakaoProfile(input.accessToken);
+        const tokens = input.accessToken
+            ? { accessToken: input.accessToken }
+            : await exchangeKakaoCodeForAccessToken(input.code || '', input.redirectUri);
+        if (!tokens.accessToken)
+            throw new Error('KAKAO_ACCESS_TOKEN_REQUIRED');
+        const { profile, raw } = await fetchKakaoProfile(tokens.accessToken);
         return {
             provider: input.provider,
             profile,
-            tokens: { accessToken: input.accessToken },
+            tokens,
             rawProfile: raw
         };
     }
@@ -257,7 +278,9 @@ async function completeSocialConsent(input, meta) {
             termsConsent: true,
             smsConsent: input.smsConsent ?? false,
             name: input.name ?? undefined,
-            gender: input.gender ?? undefined
+            gender: input.gender ?? undefined,
+            phone: input.phone ?? undefined,
+            birthDate: input.birthDate ?? undefined
         },
         select: socialUserSelect
     });

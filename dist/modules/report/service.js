@@ -35,7 +35,7 @@ async function listRoomReports(roomId) {
     return prisma_1.prisma.report.findMany({
         where: { roomId },
         include: {
-            reporter: { select: { id: true, nickname: true } }
+            reporter: { select: { id: true, name: true } }
         },
         orderBy: { createdAt: 'desc' }
     });

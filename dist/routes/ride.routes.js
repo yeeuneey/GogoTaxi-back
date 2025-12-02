@@ -1,0 +1,12 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const auth_1 = require("../middlewares/auth");
+const ride_controller_1 = require("../controllers/ride.controller");
+const router = (0, express_1.Router)();
+router.post('/rides/uber/deeplink', auth_1.requireAuth, ride_controller_1.createUberDeeplink);
+router.get('/rides/uber/deeplink', auth_1.requireAuth, ride_controller_1.createUberDeeplink);
+router.get('/rooms/:id/ride-state', auth_1.requireAuth, ride_controller_1.getRoomRideState);
+router.post('/rooms/:id/ride/request', auth_1.requireAuth, ride_controller_1.requestRoomUberRide);
+router.post('/rooms/:id/ride/stage', auth_1.requireAuth, ride_controller_1.updateRideStage);
+exports.default = router;

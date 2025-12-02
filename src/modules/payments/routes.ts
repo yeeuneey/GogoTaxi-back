@@ -3,10 +3,33 @@ import { z } from 'zod';
 import { requireAuth } from '../../middlewares/auth';
 import { listMockPayments, mockCharge, mockRefund } from './mockClient';
 import { createPaymentSession, listPaymentSessions, processPaymentEvent } from './service';
+import { extractAmountFromImage } from './gemini';
+import { ensureBalanceForDebit } from '../wallet/service';
+import { prisma } from '../../lib/prisma';
 
 const MOCK_WEBHOOK_SECRET = process.env.PAYMENTS_MOCK_WEBHOOK_SECRET ?? 'mock-secret';
 
 export const paymentsRouter = Router();
+
+const normalizeLocation = (value?: string | null) => {
+  if (!value) return '';
+  return value
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s.,/\\'"`|()[\]-]/g, '')
+    .trim();
+};
+
+const isLocationMatch = (expected?: string | null, actual?: string | null) => {
+  const normalizedExpected = normalizeLocation(expected);
+  const normalizedActual = normalizeLocation(actual);
+  if (!normalizedExpected || !normalizedActual) return false;
+  return (
+    normalizedExpected === normalizedActual ||
+    normalizedExpected.includes(normalizedActual) ||
+    normalizedActual.includes(normalizedExpected)
+  );
+};
 
 paymentsRouter.post('/mock/webhook', async (req, res) => {
   try {
@@ -34,6 +57,74 @@ paymentsRouter.use(requireAuth);
 
 paymentsRouter.get('/mock', (_req, res) => {
   res.json({ payments: listMockPayments() });
+});
+
+paymentsRouter.post('/ocr/estimate', async (req, res) => {
+  try {
+    const body = z
+      .object({
+        imageBase64: z.string().min(10),
+        mimeType: z.string().min(3).optional(),
+        roomId: z.string().cuid().optional(),
+        model: z.string().min(3).optional(),
+        apiVersion: z.string().min(2).optional()
+      })
+      .parse(req.body);
+
+    const room =
+      body.roomId &&
+      (await prisma.room.findUnique({
+        where: { id: body.roomId },
+        select: { id: true, departureLabel: true, arrivalLabel: true }
+      }));
+    if (body.roomId && !room) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+
+    const result = await extractAmountFromImage(body.imageBase64, body.mimeType, body.model, body.apiVersion);
+    if (result.amount == null) {
+      console.warn('OCR amount failed', { reason: result.reason, rawText: result.rawText?.slice(0, 200) });
+      return res.status(422).json({
+        message: 'Failed to recognize amount from image',
+        reason: result.reason,
+        rawText: result.rawText
+      });
+    }
+
+    if (room) {
+      const pickupMatch = isLocationMatch(room.departureLabel, result.pickup ?? null);
+      const dropoffMatch = isLocationMatch(room.arrivalLabel, result.dropoff ?? null);
+      if (!pickupMatch || !dropoffMatch) {
+        return res.status(409).json({
+          message: '우버 캡처의 출발/도착지가 방 설정과 일치하지 않습니다. 다시 확인하고 첨부해 주세요.',
+          reason: 'ADDRESS_MISMATCH',
+          expected: { pickup: room.departureLabel, dropoff: room.arrivalLabel },
+          detected: { pickup: result.pickup ?? null, dropoff: result.dropoff ?? null },
+          rawText: result.rawText
+        });
+      }
+    }
+
+    const amount = Math.round(result.amount);
+    const { autoTopUp, deficit, payment } = await ensureBalanceForDebit(req.user!.sub, amount, {
+      roomId: body.roomId,
+      reason: 'image_estimate'
+    });
+
+    return res.json({
+      amount,
+      autoTopUp,
+      deficit,
+      payment,
+      rawText: result.rawText
+    });
+  } catch (e: any) {
+    if (e?.name === 'ZodError') {
+      return res.status(400).json({ message: 'Validation failed', issues: e.issues });
+    }
+    console.error(e);
+    return res.status(500).json({ message: 'Failed to process image payment estimate' });
+  }
 });
 
 paymentsRouter.get('/mock/sessions', (req, res) => {

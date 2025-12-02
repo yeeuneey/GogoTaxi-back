@@ -35,7 +35,7 @@ async function listRoomReviews(roomId) {
     return prisma_1.prisma.review.findMany({
         where: { roomId },
         include: {
-            reviewer: { select: { id: true, nickname: true } }
+            reviewer: { select: { id: true, name: true } }
         },
         orderBy: { createdAt: 'desc' }
     });

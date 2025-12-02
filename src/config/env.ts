@@ -19,10 +19,11 @@ export const ENV = {
   SOCIAL_LOGIN_SUCCESS_REDIRECT_URI: process.env.SOCIAL_LOGIN_SUCCESS_REDIRECT_URI ?? '',
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ?? '',
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET ?? '',
-  GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? ''
-  ,
-  GEMINI_API_VERSION: process.env.GEMINI_API_VERSION ?? 'v1beta',
-  GEMINI_MODEL: process.env.GEMINI_MODEL ?? 'gemini-1.5-flash'
+  // Prefer backend env, fall back to Vite prefix used by the front-end to reduce setup friction.
+  UBER_CLIENT_ID: process.env.UBER_CLIENT_ID ?? process.env.VITE_UBER_CLIENT_ID ?? '',
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? '',
+  GEMINI_MODEL: process.env.GEMINI_MODEL ?? '',
+  GEMINI_API_VERSION: process.env.GEMINI_API_VERSION ?? ''
 };
 
 if (!ENV.DATABASE_URL) {

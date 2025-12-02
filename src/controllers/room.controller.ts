@@ -1,7 +1,8 @@
 import type { Request, Response } from 'express';
-import { Prisma, RoomPriority, RoomStatus } from '@prisma/client';
+import { Prisma, RoomPriority, RoomRideStage, RoomRideState, RoomStatus } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
+import { emitRoomClosed, emitRoomUpdate } from '../lib/socket';
 
 // 공통 Zod 필드 정의
 const decimalField = z.coerce.number().refine(Number.isFinite, {
@@ -41,7 +42,7 @@ const createRoomSchema = z.object({
   arrivalLat: decimalField,
   arrivalLng: decimalField,
   departureTime: isoDateField,
-  capacity: z.coerce.number().int().min(1).max(6),
+  capacity: z.coerce.number().int().min(1).max(4),
   priority: z.nativeEnum(RoomPriority).optional(),
   estimatedFare: z.coerce.number().int().positive().optional(),
   estimatedEta: isoDateField.optional()
@@ -109,7 +110,7 @@ const matchRoomsSchema = z
     radiusKm: z.coerce.number().positive().max(50).optional(),
     earliest: isoDateField.optional(),
     latest: isoDateField.optional(),
-    seatsNeeded: z.coerce.number().int().min(1).max(6).optional(),
+    seatsNeeded: z.coerce.number().int().min(1).max(4).optional(),
     priority: z.nativeEnum(RoomPriority).optional()
   })
   .refine(
@@ -123,7 +124,7 @@ const matchRoomsSchema = z
   );
 
 // Room 조회 시 기본 포함 관계
-const defaultRoomInclude = {
+export const defaultRoomInclude = {
   participants: {
     select: {
       id: true,
@@ -145,7 +146,8 @@ const defaultRoomInclude = {
       email: true,
       name: true
     }
-  }
+  },
+  rideState: true
 } satisfies Prisma.RoomInclude;
 
 type RoomWithRelations = Prisma.RoomGetPayload<{ include: typeof defaultRoomInclude }>;
@@ -157,14 +159,71 @@ const ROOM_STATUS_PROGRESS: Record<
     label: string;
   }
 > = {
-  [RoomStatus.open]: { stage: 'recruiting', label: '모집 중' },
-  [RoomStatus.recruiting]: { stage: 'recruiting', label: '모집 중' },
-  [RoomStatus.full]: { stage: 'ready', label: '모집 완료' },
-  [RoomStatus.dispatching]: { stage: 'ready', label: '배차 진행 중' },
-  [RoomStatus.success]: { stage: 'closed', label: '완료' },
-  [RoomStatus.failed]: { stage: 'closed', label: '실패' },
-  [RoomStatus.closed]: { stage: 'closed', label: '마감' }
+  [RoomStatus.open]: { stage: 'recruiting', label: 'Recruiting' },
+  [RoomStatus.recruiting]: { stage: 'recruiting', label: 'Recruiting' },
+  [RoomStatus.full]: { stage: 'ready', label: 'Full' },
+  [RoomStatus.dispatching]: { stage: 'ready', label: 'Dispatching' },
+  [RoomStatus.success]: { stage: 'closed', label: 'Completed' },
+  [RoomStatus.failed]: { stage: 'closed', label: 'Failed' },
+  [RoomStatus.closed]: { stage: 'closed', label: 'Closed' }
 };
+
+const RIDE_STAGE_META: Record<
+  RoomRideStage,
+  {
+    label: string;
+    description: string;
+    order: number;
+  }
+> = {
+  [RoomRideStage.idle]: {
+    order: 0,
+    label: 'Idle',
+    description: 'The ride request has not started yet.'
+  },
+  [RoomRideStage.requesting]: {
+    order: 1,
+    label: 'Preparing request',
+    description: 'The host is preparing the ride request.'
+  },
+  [RoomRideStage.deeplink_ready]: {
+    order: 2,
+    label: 'Deeplink ready',
+    description: 'An Uber deeplink is ready; proceed with the request.'
+  },
+  [RoomRideStage.dispatching]: {
+    order: 3,
+    label: 'Dispatching',
+    description: 'Waiting for a driver to be assigned.'
+  },
+  [RoomRideStage.driver_assigned]: {
+    order: 4,
+    label: 'Driver assigned',
+    description: 'A driver and vehicle have been assigned.'
+  },
+  [RoomRideStage.arriving]: {
+    order: 5,
+    label: 'Arriving',
+    description: 'The driver is on the way to the pickup location.'
+  },
+  [RoomRideStage.onboard]: {
+    order: 6,
+    label: 'On board',
+    description: 'Trip is in progress.'
+  },
+  [RoomRideStage.completed]: {
+    order: 7,
+    label: 'Completed',
+    description: 'Arrived at destination.'
+  },
+  [RoomRideStage.canceled]: {
+    order: 8,
+    label: 'Canceled',
+    description: 'The dispatch was canceled.'
+  }
+};
+
+
 
 // 공통 validation 응답
 function respondValidationError(res: Response, error: z.ZodError) {
@@ -176,8 +235,83 @@ function respondValidationError(res: Response, error: z.ZodError) {
 
 const toDecimal = (value: number) => new Prisma.Decimal(value);
 
+export function serializeRideState(state?: RoomRideState | null) {
+  const base = {
+    stage: RoomRideStage.idle,
+    stageLabel: RIDE_STAGE_META[RoomRideStage.idle].label,
+    stageDescription: RIDE_STAGE_META[RoomRideStage.idle].description,
+    stageOrder: RIDE_STAGE_META[RoomRideStage.idle].order,
+    deeplinkUrl: null as string | null,
+    pickup: null as
+      | {
+          label: string | null;
+          lat: number | null;
+          lng: number | null;
+        }
+      | null,
+    dropoff: null as
+      | {
+          label: string | null;
+          lat: number | null;
+          lng: number | null;
+        }
+      | null,
+    driver: null as
+      | {
+          name: string | null;
+          carModel: string | null;
+          carNumber: string | null;
+        }
+      | null,
+    note: null as string | null,
+    updatedAt: null as string | null
+  };
+
+  if (!state) {
+    return base;
+  }
+
+  const currentStage = state.stage ?? RoomRideStage.idle;
+  const meta = RIDE_STAGE_META[currentStage];
+
+  return {
+    ...base,
+    stage: currentStage,
+    stageLabel: meta.label,
+    stageDescription: meta.description,
+    stageOrder: meta.order,
+    deeplinkUrl: state.deeplinkUrl ?? null,
+    pickup:
+      state.pickupLabel || state.pickupLat || state.pickupLng
+        ? {
+            label: state.pickupLabel ?? null,
+            lat: state.pickupLat?.toNumber() ?? null,
+            lng: state.pickupLng?.toNumber() ?? null
+          }
+        : null,
+    dropoff:
+      state.dropoffLabel || state.dropoffLat || state.dropoffLng
+        ? {
+            label: state.dropoffLabel ?? null,
+            lat: state.dropoffLat?.toNumber() ?? null,
+            lng: state.dropoffLng?.toNumber() ?? null
+          }
+        : null,
+    driver:
+      state.driverName || state.carModel || state.carNumber
+        ? {
+            name: state.driverName ?? null,
+            carModel: state.carModel ?? null,
+            carNumber: state.carNumber ?? null
+          }
+        : null,
+    note: state.note ?? null,
+    updatedAt: state.updatedAt.toISOString()
+  };
+}
+
 // Room JSON 직렬화
-function serializeRoom(room: RoomWithRelations, viewerId?: string) {
+export function serializeRoom(room: RoomWithRelations, viewerId?: string) {
   const progress = ROOM_STATUS_PROGRESS[room.status];
   const filledSeats = room.participants.length;
   const seatsAvailable = Math.max(room.capacity - filledSeats, 0);
@@ -196,7 +330,8 @@ function serializeRoom(room: RoomWithRelations, viewerId?: string) {
     seats: seatsAvailable,
     filled: filledSeats,
     dispatchStage: progress.stage,
-    dispatchStageLabel: progress.label
+    dispatchStageLabel: progress.label,
+    rideState: serializeRideState(room.rideState)
   };
 
   if (!viewerId) {
@@ -209,9 +344,14 @@ function serializeRoom(room: RoomWithRelations, viewerId?: string) {
   return {
     ...serialized,
     mySeatNumber: seatNumber,
+    isHost: room.creatorId === viewerId,
     dispatchStage: progress.stage,
     dispatchStageLabel: progress.label
   };
+}
+
+export function broadcastRoom(room: RoomWithRelations, viewerId?: string) {
+  emitRoomUpdate(room.id, serializeRoom(room, viewerId));
 }
 
 // 거리 계산 (위도/경도 → km)
@@ -253,7 +393,7 @@ async function refreshRoomStatus(roomId: string) {
 }
 
 // Room 로드 + 없으면 예외
-async function loadRoomOrThrow(id: string) {
+export async function loadRoomOrThrow(id: string) {
   const room = await prisma.room.findUnique({
     where: { id },
     include: defaultRoomInclude
@@ -309,6 +449,7 @@ export async function createRoom(req: Request, res: Response) {
 
     await refreshRoomStatus(room.id);
     const updated = await loadRoomOrThrow(room.id);
+    broadcastRoom(updated, userId);
     return res.status(201).json({ room: serializeRoom(updated, userId) });
   } catch (error) {
     console.error('createRoom error', error);
@@ -604,6 +745,7 @@ export async function updateRoom(req: Request, res: Response) {
       data,
       include: defaultRoomInclude
     });
+    broadcastRoom(updated, userId);
     return res.json({ room: serializeRoom(updated, userId) });
   } catch (error) {
     console.error('updateRoom error', error);
@@ -699,6 +841,7 @@ export async function joinRoom(req: Request, res: Response) {
     await refreshRoomStatus(room.id);
 
     const updated = await loadRoomOrThrow(room.id);
+    broadcastRoom(updated, userId);
     return res.status(201).json({ room: serializeRoom(updated, userId) });
   } catch (error) {
     console.error('joinRoom error', error);
@@ -750,6 +893,7 @@ export async function leaveRoom(req: Request, res: Response) {
         prisma.roomParticipant.deleteMany({ where: { roomId: room.id } }),
         prisma.room.delete({ where: { id: room.id } })
       ]);
+      emitRoomClosed(room.id);
       return res.json({ room: null, deleted: true });
     }
 
@@ -769,6 +913,12 @@ export async function leaveRoom(req: Request, res: Response) {
       include: defaultRoomInclude
     });
 
+    if (updated) {
+      broadcastRoom(updated, userId);
+    } else {
+      emitRoomClosed(param.data.id);
+    }
+    
     return res.json({ room: updated ? serializeRoom(updated, userId) : null });
   } catch (error) {
     console.error('leaveRoom error', error);

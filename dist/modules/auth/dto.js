@@ -51,14 +51,13 @@ exports.SocialLoginDto = zod_1.z
     if (!val.code && !val.accessToken) {
         ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, message: 'Either code or accessToken is required' });
     }
-    if (val.provider === 'kakao' && !val.accessToken) {
-        ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, message: 'Kakao login requires accessToken' });
-    }
 });
 exports.SocialConsentDto = zod_1.z.object({
     pendingToken: zod_1.z.string().min(10),
     termsConsent: zod_1.z.boolean(),
     smsConsent: zod_1.z.boolean().optional(),
     name: zod_1.z.string().min(1).max(50).optional(),
-    gender: zod_1.z.enum(['M', 'F']).optional()
+    gender: zod_1.z.enum(['M', 'F']).optional(),
+    phone: zod_1.z.string().min(5).max(20).optional(),
+    birthDate: zod_1.z.coerce.date().optional()
 });

@@ -60,6 +60,7 @@ model Room {
   reports            Report[]
   settlements        RoomSettlement[]
   walletTransactions WalletTransaction[]
+  rideState          RoomRideState?
 }
 
 model RoomParticipant {
@@ -143,6 +144,27 @@ model DispatchedTaxi {
   room Room @relation(fields: [roomId], references: [id])
 }
 
+model RoomRideState {
+  id           String        @id @default(cuid())
+  roomId       String        @unique @map("room_id")
+  room         Room          @relation(fields: [roomId], references: [id])
+  stage        RoomRideStage @default(idle)
+  deeplinkUrl  String?       @map("deeplink_url")
+  pickupLabel  String?       @map("pickup_label")
+  pickupLat    Decimal?      @map("pickup_lat") @db.Decimal(10, 6)
+  pickupLng    Decimal?      @map("pickup_lng") @db.Decimal(10, 6)
+  dropoffLabel String?       @map("dropoff_label")
+  dropoffLat   Decimal?      @map("dropoff_lat") @db.Decimal(10, 6)
+  dropoffLng   Decimal?      @map("dropoff_lng") @db.Decimal(10, 6)
+  driverName   String?       @map("driver_name")
+  carModel     String?       @map("car_model")
+  carNumber    String?       @map("car_number")
+  note         String?       @db.Text
+  updatedById  String?       @map("updated_by_id")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+}
+
 model Notice {
   id        String     @id @default(cuid())
   title     String
@@ -200,6 +222,18 @@ enum RoomStatus {
   dispatching
   success
   failed
+}
+
+enum RoomRideStage {
+  idle
+  requesting
+  deeplink_ready
+  dispatching
+  driver_assigned
+  arriving
+  onboard
+  completed
+  canceled
 }
 
 enum SettlementStatus {

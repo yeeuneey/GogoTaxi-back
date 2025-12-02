@@ -3,10 +3,14 @@ import cors from 'cors';
 import helmet from 'helmet';
 import pino from 'pino';
 import pinoHttp from 'pino-http';
+import { createServer } from 'http';
 import { ENV } from './config/env';
-import { router } from './routes';
+// Use the routes/index.ts (folder) router which includes ride-related endpoints.
+// Explicitly import the router defined in src/routes/index.ts (not the legacy src/routes.ts)
+import { router } from './routes/index';
 import { requestLimiter } from './middlewares/security';
 import { errorHandler, notFoundHandler } from './middlewares/error';
+import { initSocket } from './lib/socket';
 
 const logger = pino({ transport: { target: 'pino-pretty' } });
 const app = express();
@@ -27,8 +31,14 @@ app.use(
 );
 app.use(
   express.raw({
-    type: () => true,
-    limit: '6mb'
+    type: (req) => {
+      const ct = req.headers['content-type'] || '';
+      if (typeof ct === 'string' && ct.toLowerCase().startsWith('multipart/form-data')) {
+        return false;
+      }
+      return true;
+    },
+    limit: '5mb'
   })
 );
 
@@ -74,6 +84,9 @@ app.use('/api', router);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-app.listen(PORT, "0.0.0.0", () => {
+const server = createServer(app);
+initSocket(server);
+
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`Server listening on ${PORT}`);
 });
