@@ -17,7 +17,7 @@ settlementRouter.post('/rooms/:roomId/hold', async (req, res) => {
     if (e?.message === 'ESTIMATED_FARE_MISSING') return res.status(409).json({ message: 'Estimated fare required' });
     if (e?.message === 'INSUFFICIENT_BALANCE') return res.status(402).json({ message: 'Insufficient balance' });
     console.error(e);
-    res.status(500).json({ message: 'Internal error' });
+    res.status(500).json({ message: e?.message ?? 'Internal error' });
   }
 });
 
@@ -32,6 +32,6 @@ settlementRouter.post('/rooms/:roomId/finalize', async (req, res) => {
     if (e?.message === 'ROOM_NOT_FOUND') return res.status(404).json({ message: 'Room not found' });
     if (e?.message === 'ESTIMATED_FARE_MISSING') return res.status(409).json({ message: 'Estimated fare required' });
     console.error(e);
-    res.status(500).json({ message: 'Internal error' });
+    res.status(500).json({ message: e?.message ?? 'Internal error' });
   }
 });

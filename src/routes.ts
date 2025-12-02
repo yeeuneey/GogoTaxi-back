@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { z } from 'zod';
 
 // 인증
 import { authRouter } from './modules/auth/routes';
@@ -11,6 +12,7 @@ import { UpdateProfileDto, ChangePasswordDto } from './modules/auth/dto';
 import { walletRouter } from './modules/wallet/routes';
 import { settlementRouter } from './modules/settlement/routes';
 import { paymentsRouter } from './modules/payments/routes';
+import roomRouter from './routes/room.routes';
 
 // 알림
 import { notificationsRouter } from './modules/notifications/routes';
@@ -18,6 +20,9 @@ import { notificationsRouter } from './modules/notifications/routes';
 // 후기 / 신고
 import { reviewRouter } from './modules/review/routes';
 import { reportRouter } from './modules/report/routes';
+import { analyzeReceiptImage } from './modules/rideHistory/receiptService';
+// 이용 기록
+import { rideHistoryRouter } from './modules/rideHistory/routes';
 
 export const router = Router();
 
@@ -37,11 +42,43 @@ router.use('/auth', authRouter);
 router.use('/wallet', walletRouter);
 router.use('/payments', paymentsRouter);
 router.use('/settlements', settlementRouter);
+router.use(roomRouter);
 
 /* ============================================
    알림
 =============================================== */
 router.use('/notifications', notificationsRouter);
+router.use('/rides', rideHistoryRouter);
+
+router.post('/receipts/analyze', requireAuth, async (req, res) => {
+  try {
+    const input = z
+      .object({
+        imageBase64: z.string().min(20, 'imageBase64 is required'),
+        mimeType: z.string().optional(),
+        prompt: z.string().optional(),
+      })
+      .parse(req.body);
+    const analysis = await analyzeReceiptImage(input);
+    res.json({ analysis });
+  } catch (e: any) {
+    if (e?.name === 'ZodError') {
+      return res.status(400).json({ message: 'Validation failed', issues: e.issues });
+    }
+    if (e?.message === 'GEMINI_API_KEY_NOT_CONFIGURED') {
+      return res.status(500).json({ message: 'Gemini API key is not configured.' });
+    }
+    console.error('receipt analyze error', e);
+    const isGeminiUnavailable =
+      typeof e?.message === 'string' &&
+      (e.message.includes('GEMINI_FETCH_FAILED') || e.message.includes('GEMINI_REQUEST_FAILED'));
+    res.status(isGeminiUnavailable ? 502 : 500).json({
+      message: isGeminiUnavailable
+        ? 'Gemini Vision 요청에 실패했습니다. 네트워크나 API 키를 확인해 주세요.'
+        : e?.message || 'Failed to analyze receipt',
+    });
+  }
+});
 
 /* ============================================
    후기 / 신고

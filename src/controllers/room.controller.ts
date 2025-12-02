@@ -134,7 +134,7 @@ const defaultRoomInclude = {
         select: {
           id: true,
           email: true,
-          nickname: true
+          name: true
         }
       }
     }
@@ -143,7 +143,7 @@ const defaultRoomInclude = {
     select: {
       id: true,
       email: true,
-      nickname: true
+      name: true
     }
   }
 } satisfies Prisma.RoomInclude;

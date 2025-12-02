@@ -32,7 +32,7 @@ export async function listRoomReports(roomId: string) {
   return prisma.report.findMany({
     where: { roomId },
     include: {
-      reporter: { select: { id: true, nickname: true } }
+      reporter: { select: { id: true, name: true } }
     },
     orderBy: { createdAt: 'desc' }
   });

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import roomRouter from "./routes/room.routes";
 
 // 인증
 import { authRouter } from "./modules/auth/routes";
@@ -26,7 +27,6 @@ export const router = Router();
    상태 확인
 =============================================== */
 router.get("/", (_req, res) => res.json({ message: "GogoTaxi backend up" }));
-
 /* ============================================
    인증 관련
 =============================================== */
@@ -38,6 +38,7 @@ router.use("/auth", authRouter);
 router.use("/wallet", walletRouter);
 router.use("/payments", paymentsRouter);
 router.use("/settlements", settlementRouter);
+router.use(roomRouter);
 
 /* ============================================
    알림
@@ -70,7 +71,7 @@ router.get("/me", requireAuth, async (req, res) => {
   try {
     const me = await getProfile(req.userId);
     res.json({ me });
-  } catch (e: any) {
+  } catch (e) {
     if (e?.message === "USER_NOT_FOUND")
       return res.status(404).json({ message: "User not found" });
 
@@ -84,7 +85,7 @@ router.patch("/me", requireAuth, async (req, res) => {
     const input = UpdateProfileDto.parse(req.body);
     const me = await updateProfile(req.userId, input);
     res.json({ me });
-  } catch (e: any) {
+  } catch (e) {
     if (e?.name === "ZodError")
       return res.status(400).json({ message: "Validation failed", issues: e.issues });
     if (e?.message === "USER_NOT_FOUND")
@@ -100,7 +101,7 @@ router.patch("/me/password", requireAuth, async (req, res) => {
     const input = ChangePasswordDto.parse(req.body);
     await changePassword(req.userId, input);
     res.json({ success: true });
-  } catch (e: any) {
+  } catch (e) {
     if (e?.name === "ZodError")
       return res.status(400).json({ message: "Validation failed", issues: e.issues });
     if (e?.message === "INVALID_CURRENT_PASSWORD")

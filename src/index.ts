@@ -28,7 +28,7 @@ app.use(
 app.use(
   express.raw({
     type: () => true,
-    limit: '1mb'
+    limit: '6mb'
   })
 );
 
