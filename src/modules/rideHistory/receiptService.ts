@@ -1,7 +1,7 @@
 import { ENV } from '../../config/env'
 
-const GEMINI_API_VERSION = ENV.GEMINI_API_VERSION?.trim() || 'v1beta'
-const GEMINI_MODEL = ENV.GEMINI_MODEL?.trim() || 'gemini-1.5-flash'
+const GEMINI_API_VERSION = ENV.GEMINI_API_VERSION?.trim() || 'v1'
+const GEMINI_MODEL = ENV.GEMINI_MODEL?.trim() || 'gemini-2.0-flash-001'
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/${GEMINI_API_VERSION}/models/${GEMINI_MODEL}:generateContent`
 
 export type ReceiptAnalysis = {
@@ -20,16 +20,19 @@ type GeminiResponse = {
 }
 
 const DEFAULT_PROMPT = `
-너는 다국어 택시 영수증 인식기야. 이미지를 분석해서 아래 JSON 형식으로만 답해.
+당신은 한국 택시/모빌리티 영수증을 분석하는 보조 도구입니다. 제공된 이미지를 보고 아래 JSON 스키마만 반환하세요.
 {
   "totalAmount": number | null,
-  "currency": "KRW" | "JPY" | "USD" | string | null,
+  "currency": "KRW" | null,
   "summary": string,
   "items": [{ "label": string, "amount": number | null }],
   "rawText": string
 }
-totalAmount에는 숫자만 넣고, currency에는 ISO 통화코드(KRW/JPY/USD 등)를 넣어.
-한국어 설명으로 summary를 작성해.
+- 총액/합계/Total 줄에서 통화 기호(₩, KRW, 원)와 붙어 있는 금액만 찾아 totalAmount에 숫자로 입력합니다. 예: "합계 ₩9,200" -> totalAmount: 9200, currency: "KRW".
+- 숫자에서 쉼표/통화 기호를 제거하고 정수로 변환하세요.
+- 원화 외(JPY, USD 등) 통화 표시는 모두 무시하세요.
+- summary는 한국어 한 줄 설명으로 작성하세요.
+- items에는 보이는 주요 항목(label, amount)을 넣되 없으면 비워두세요.
 `
 
 export async function analyzeReceiptImage(input: {
@@ -41,6 +44,8 @@ export async function analyzeReceiptImage(input: {
     throw new Error('GEMINI_API_KEY_NOT_CONFIGURED')
   }
 
+  const normalizedBase64 = input.imageBase64.replace(/^data:[^;]+;base64,/, '').trim()
+
   const payload = {
     contents: [
       {
@@ -50,13 +55,13 @@ export async function analyzeReceiptImage(input: {
           {
             inline_data: {
               mime_type: input.mimeType || 'image/png',
-              data: input.imageBase64,
+              data: normalizedBase64,
             },
           },
         ],
       },
     ],
-    response_mime_type: 'application/json',
+    generationConfig: { temperature: 0 },
   }
 
   const startedAt = Date.now()
@@ -76,12 +81,13 @@ export async function analyzeReceiptImage(input: {
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown Gemini error')
-    throw new Error(`GEMINI_REQUEST_FAILED: ${errorText}`)
+    const detail = `status ${response.status} ${response.statusText} - ${errorText}`
+    throw new Error(`GEMINI_REQUEST_FAILED: ${detail}`)
   }
 
   const body = (await response.json()) as GeminiResponse
   const rawText =
-    body?.candidates?.[0]?.content?.parts?.find(part => part.text)?.text?.trim() ?? ''
+    body?.candidates?.[0]?.content?.parts?.map(part => part.text ?? '').join(' ').trim() ?? ''
 
   const parsed = parseReceiptJson(rawText)
 
@@ -129,7 +135,7 @@ function extractJsonCandidate(text: string): string | null {
   const trimmed = text.trim()
   if (!trimmed) return null
 
-  // 이미 순수 JSON이면 그대로 시도
+  // 순수 JSON이면 그대로 사용
   try {
     JSON.parse(trimmed)
     return trimmed
@@ -195,13 +201,16 @@ function coerceNumber(value: unknown): number | null {
 }
 
 const CURRENCY_PATTERNS: Array<{ currency: string; regex: RegExp }> = [
-  { currency: 'JPY', regex: /(?:JP¥|JPY|￥|¥)\s*([\d,.]+)/i },
-  { currency: 'KRW', regex: /(?:KRW|₩)\s*([\d,.]+)/i },
-  { currency: 'USD', regex: /(?:USD|\$)\s*([\d,.]+)/i },
+  { currency: 'KRW', regex: /(?:KRW|₩|￦|원)\s*([\d,.]+)/i },
 ]
 
-function inferAmountFromRawText(rawText: string): { amount: number | null; currency: string | null } | null {
+function inferAmountFromRawText(
+  rawText: string,
+): { amount: number | null; currency: string | null } | null {
   if (!rawText) return null
+
+  const totalFromLines = extractTotalFromLines(rawText)
+  if (totalFromLines) return totalFromLines
 
   for (const pattern of CURRENCY_PATTERNS) {
     const match = rawText.match(pattern.regex)
@@ -213,11 +222,37 @@ function inferAmountFromRawText(rawText: string): { amount: number | null; curre
     }
   }
 
-  const generalMatch = rawText.match(/(합계|총액|合計|total)\D*([\d,.]+)/i)
-  if (generalMatch?.[2]) {
-    const amount = coerceNumber(generalMatch[2])
+  const generalMatch = rawText.match(/(?:합계|총액|총\s*금액|total)\D*([\d,.]+)/i)
+  if (generalMatch?.[1] && /(?:KRW|₩|￦|원)/i.test(rawText)) {
+    const amount = coerceNumber(generalMatch[1])
     if (amount != null) {
-      return { amount, currency: null }
+      return { amount, currency: 'KRW' }
+    }
+  }
+
+  return null
+}
+
+// 합계/총액 줄에서 우선적으로 총 금액을 추출한다.
+function extractTotalFromLines(
+  rawText: string,
+): { amount: number | null; currency: string | null } | null {
+  const lines = rawText
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+
+  for (const line of lines) {
+    const totalMatch = line.match(
+      /(?:합계|총액|총\s*금액|total)\s*[:\-]?\s*([₩￦]?\s*[\d.,]+)/i,
+    )
+    if (totalMatch?.[1]) {
+      if (!/(₩|￦|KRW|원)/i.test(line)) continue
+      const amount = coerceNumber(totalMatch[1])
+      if (amount != null) {
+        const currency = 'KRW'
+        return { amount, currency }
+      }
     }
   }
 
