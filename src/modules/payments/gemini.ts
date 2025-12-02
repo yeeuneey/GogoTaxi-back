@@ -12,8 +12,31 @@ function buildGeminiUrl(modelOverride?: string, versionOverride?: string) {
 }
 
 type GeminiAmountResult =
-  | { amount: number; rawText: string }
-  | { amount: null; rawText: string; reason: string };
+  | { amount: number; rawText: string; pickup?: string; dropoff?: string }
+  | { amount: null; rawText: string; reason: string; pickup?: string; dropoff?: string };
+
+function parseLocations(text: string): { pickup?: string; dropoff?: string } {
+  const trimmed = text.trim();
+  if (!trimmed) return {};
+
+  // Prefer structured JSON if the model follows the instruction.
+  try {
+    const parsed = JSON.parse(trimmed);
+    const pickup = typeof parsed.pickup === 'string' ? parsed.pickup.trim() : undefined;
+    const dropoff = typeof parsed.dropoff === 'string' ? parsed.dropoff.trim() : undefined;
+    return { pickup, dropoff };
+  } catch {
+    // fallthrough
+  }
+
+  // Lightweight heuristic extraction when JSON is not returned.
+  const pickupMatch = text.match(/(?:pickup|\uCD9C\uBC1C)\s*[:\-]?\s*([^\n|]+)/i);
+  const dropoffMatch = text.match(/(?:dropoff|destination|to|\uB3C4\uCC29)\s*[:\-]?\s*([^\n|]+)/i);
+  return {
+    pickup: pickupMatch?.[1]?.trim(),
+    dropoff: dropoffMatch?.[1]?.trim()
+  };
+}
 
 export async function extractAmountFromImage(
   imageBase64: string,
@@ -25,21 +48,23 @@ export async function extractAmountFromImage(
     return { amount: null, rawText: '', reason: 'GEMINI_API_KEY not configured' };
   }
 
-  // data URL로 넘어오면 헤더 제거
+  // Strip data URL prefix if present.
   const normalizedBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '').trim();
 
   const prompt =
     [
-      'Uber 캡처 화면에서 "일반 택시" 요금 범위의 최대 금액만 숫자로 하나 반환하세요.',
-      '예: "₩6,300-7,800"이면 7800만 반환.',
-      '스피드호출 등 다른 서비스 가격은 무시.',
-      '통화 기호/단위/설명/단어 없이 숫자만.'
+      'Uber 캡처 화면에서 "일반 택시" 요금 범위의 최댓값(정수)만 amount에 넣으세요.',
+      '예: "₩6,300-7,800"이라면 7800만 반환하세요.',
+      '스피드호출/우티/타 서비스 가격은 모두 무시하세요.',
+      '출발지/도착지 텍스트를 pickup/dropoff에 넣고 JSON 한 줄로만 답변하세요.',
+      '형식: {"amount":"7800","pickup":"강남역","dropoff":"서울역"}',
+      '통화 기호/단위/콤마 제거, 값이 없으면 null을 넣으세요.'
     ].join(' ');
 
   const pickMaxAmount = (text: string): number | null => {
     const cleaned = text
       .replace(/[,\s\u00A0]/g, '') // commas, spaces, non-breaking space
-      .replace(/[₩원]|KRW/gi, ''); // currency markers
+      .replace(/[\uC6D0\u20A9]|KRW/gi, ''); // currency markers (원, ₩, KRW)
     const range = cleaned.match(/(\d+(?:\.\d+)?)[~-](\d+(?:\.\d+)?)/);
     if (range) {
       return Number(range[2]);
@@ -89,10 +114,11 @@ export async function extractAmountFromImage(
       const text =
         data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join(' ')?.trim() ?? '';
       const amount = pickMaxAmount(text);
+      const { pickup, dropoff } = parseLocations(text);
       if (amount == null || Number.isNaN(amount)) {
-        return { amount: null, rawText: text, reason: 'NO_AMOUNT_FOUND' };
+        return { amount: null, rawText: text, reason: 'NO_AMOUNT_FOUND', pickup, dropoff };
       }
-      return { amount, rawText: text };
+      return { amount, rawText: text, pickup, dropoff };
     } catch (error: any) {
       const reason = error?.response?.data ?? error?.message ?? 'UNKNOWN_ERROR';
       errors.push(
