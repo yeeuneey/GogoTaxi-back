@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { ENV } from '../../config/env';
 
 const GEMINI_API_VERSION = ENV.GEMINI_API_VERSION?.trim() || 'v1beta';
@@ -44,7 +45,7 @@ export async function analyzeDispatchScreenshot(input: {
     throw new Error('GEMINI_API_KEY_NOT_CONFIGURED');
   }
 
-  const normalizedBase64 = normalizeBase64(input.imageBase64);
+  const normalizedImage = normalizeImagePayload(input.imageBase64, input.mimeType);
 
   const payload = {
     contents: [
@@ -54,14 +55,13 @@ export async function analyzeDispatchScreenshot(input: {
           { text: (input.prompt ?? DEFAULT_PROMPT).trim() },
           {
             inline_data: {
-              mime_type: input.mimeType || 'image/png',
-              data: normalizedBase64
+              mime_type: normalizedImage.mimeType,
+              data: normalizedImage.data
             }
           }
         ]
       }
-    ],
-    response_mime_type: 'application/json'
+    ]
   };
 
   const startedAt = Date.now();
@@ -79,7 +79,19 @@ export async function analyzeDispatchScreenshot(input: {
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown Gemini error');
-    throw new Error(`GEMINI_REQUEST_FAILED: ${errorText}`);
+    let parsedError: any;
+    try {
+      parsedError = JSON.parse(errorText);
+    } catch {
+      parsedError = null;
+    }
+    const geminiMessage: string =
+      typeof parsedError?.error?.message === 'string' ? parsedError.error.message : errorText;
+    const err: any = new Error(`GEMINI_REQUEST_FAILED: ${geminiMessage}`);
+    err.status = response.status;
+    err.geminiMessage = geminiMessage;
+    err.geminiCode = parsedError?.error?.code;
+    throw err;
   }
 
   const body = (await response.json()) as GeminiResponse;
@@ -168,6 +180,30 @@ function extractJsonCandidate(text: string): string | null {
   return null;
 }
 
-function normalizeBase64(value: string): string {
-  return value.replace(/^data:[^;]+;base64,/, '').trim();
+function normalizeImagePayload(
+  imageBase64: string,
+  mimeType?: string
+): { data: string; mimeType: string } {
+  let data = imageBase64?.trim();
+  if (!data) {
+    throw new Error('IMAGE_BASE64_REQUIRED');
+  }
+
+  let resolvedMime = mimeType?.trim() || 'image/png';
+  const dataUrlMatch = data.match(/^data:(.+?);base64,(.+)$/i);
+  if (dataUrlMatch) {
+    const [, detectedMime, payload] = dataUrlMatch;
+    if (!mimeType && detectedMime?.trim()) {
+      resolvedMime = detectedMime.trim();
+    }
+    data = payload.trim();
+  }
+
+  try {
+    Buffer.from(data, 'base64');
+  } catch {
+    throw new Error('INVALID_IMAGE_BASE64');
+  }
+
+  return { data, mimeType: resolvedMime };
 }

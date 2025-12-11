@@ -387,18 +387,30 @@ async function analyzeDispatchInfo(req, res) {
         });
     }
     catch (error) {
+        console.error('analyzeDispatchInfo raw error', error);
+        if (error?.message === 'INVALID_IMAGE_BASE64' || error?.message === 'IMAGE_BASE64_REQUIRED') {
+            return res.status(400).json({ message: 'Invalid or unsupported dispatch screenshot payload' });
+        }
+        if (typeof error?.status === 'number' &&
+            error.status >= 400 &&
+            error.status < 500 &&
+            typeof error?.message === 'string' &&
+            error.message.includes('GEMINI_REQUEST_FAILED')) {
+            return res
+                .status(400)
+                .json({ message: error?.geminiMessage || 'Gemini?? ???? ???? ?????. ?? ?????? ??? ???.' });
+        }
         if (error?.message === 'GEMINI_API_KEY_NOT_CONFIGURED') {
             return res.status(500).json({ message: 'Gemini API key is not configured.' });
         }
         const isGeminiUnavailable = typeof error?.message === 'string' &&
             (error.message.includes('GEMINI_FETCH_FAILED') ||
-                error.message.includes('GEMINI_REQUEST_FAILED'));
+                (error.message.includes('GEMINI_REQUEST_FAILED') && !error?.status));
         if (isGeminiUnavailable) {
             return res
                 .status(502)
-                .json({ message: 'Gemini Vision 요청이 실패했습니다. 잠시 후 다시 시도해 주세요.' });
+                .json({ message: 'Gemini Vision ??? ??????. ?? ? ?? ??? ???.' });
         }
-        console.error('analyzeDispatchInfo error', error);
         return res.status(500).json({ message: 'Failed to analyze dispatch screenshot' });
     }
 }
