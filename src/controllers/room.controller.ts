@@ -223,7 +223,14 @@ const RIDE_STAGE_META: Record<
   }
 };
 
+const ANALYSIS_COMPLETE_STAGES = new Set<RoomRideStage>([
+  RoomRideStage.driver_assigned,
+  RoomRideStage.arriving,
+  RoomRideStage.onboard,
+  RoomRideStage.completed
+]);
 
+const SEAT_DEPENDENT_STATUSES = new Set<RoomStatus>([RoomStatus.open, RoomStatus.full]);
 
 // 공통 validation 응답
 function respondValidationError(res: Response, error: z.ZodError) {
@@ -264,7 +271,8 @@ export function serializeRideState(state?: RoomRideState | null) {
         }
       | null,
     note: null as string | null,
-    updatedAt: null as string | null
+    updatedAt: null as string | null,
+    analysisCompleted: false
   };
 
   if (!state) {
@@ -273,6 +281,15 @@ export function serializeRideState(state?: RoomRideState | null) {
 
   const currentStage = state.stage ?? RoomRideStage.idle;
   const meta = RIDE_STAGE_META[currentStage];
+  const driver =
+    state.driverName || state.carModel || state.carNumber
+      ? {
+          name: state.driverName ?? null,
+          carModel: state.carModel ?? null,
+          carNumber: state.carNumber ?? null
+        }
+      : null;
+  const analysisCompleted = !!driver || ANALYSIS_COMPLETE_STAGES.has(currentStage);
 
   return {
     ...base,
@@ -297,16 +314,10 @@ export function serializeRideState(state?: RoomRideState | null) {
             lng: state.dropoffLng?.toNumber() ?? null
           }
         : null,
-    driver:
-      state.driverName || state.carModel || state.carNumber
-        ? {
-            name: state.driverName ?? null,
-            carModel: state.carModel ?? null,
-            carNumber: state.carNumber ?? null
-          }
-        : null,
+    driver,
     note: state.note ?? null,
-    updatedAt: state.updatedAt.toISOString()
+    updatedAt: state.updatedAt.toISOString(),
+    analysisCompleted
   };
 }
 
@@ -383,6 +394,10 @@ async function refreshRoomStatus(roomId: string) {
     }
   });
   if (!snapshot) return;
+
+  if (!SEAT_DEPENDENT_STATUSES.has(snapshot.status)) {
+    return;
+  }
 
   const nextStatus =
     snapshot.participants.length >= snapshot.capacity ? RoomStatus.full : RoomStatus.open;

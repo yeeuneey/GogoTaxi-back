@@ -205,6 +205,13 @@ const RIDE_STAGE_META = {
         description: 'The dispatch was canceled.'
     }
 };
+const ANALYSIS_COMPLETE_STAGES = new Set([
+    client_1.RoomRideStage.driver_assigned,
+    client_1.RoomRideStage.arriving,
+    client_1.RoomRideStage.onboard,
+    client_1.RoomRideStage.completed
+]);
+const SEAT_DEPENDENT_STATUSES = new Set([client_1.RoomStatus.open, client_1.RoomStatus.full]);
 // 공통 validation 응답
 function respondValidationError(res, error) {
     return res.status(400).json({
@@ -224,13 +231,22 @@ function serializeRideState(state) {
         dropoff: null,
         driver: null,
         note: null,
-        updatedAt: null
+        updatedAt: null,
+        analysisCompleted: false
     };
     if (!state) {
         return base;
     }
     const currentStage = state.stage ?? client_1.RoomRideStage.idle;
     const meta = RIDE_STAGE_META[currentStage];
+    const driver = state.driverName || state.carModel || state.carNumber
+        ? {
+            name: state.driverName ?? null,
+            carModel: state.carModel ?? null,
+            carNumber: state.carNumber ?? null
+        }
+        : null;
+    const analysisCompleted = !!driver || ANALYSIS_COMPLETE_STAGES.has(currentStage);
     return {
         ...base,
         stage: currentStage,
@@ -252,15 +268,10 @@ function serializeRideState(state) {
                 lng: state.dropoffLng?.toNumber() ?? null
             }
             : null,
-        driver: state.driverName || state.carModel || state.carNumber
-            ? {
-                name: state.driverName ?? null,
-                carModel: state.carModel ?? null,
-                carNumber: state.carNumber ?? null
-            }
-            : null,
+        driver,
         note: state.note ?? null,
-        updatedAt: state.updatedAt.toISOString()
+        updatedAt: state.updatedAt.toISOString(),
+        analysisCompleted
     };
 }
 // Room JSON 직렬화
@@ -329,6 +340,9 @@ async function refreshRoomStatus(roomId) {
     });
     if (!snapshot)
         return;
+    if (!SEAT_DEPENDENT_STATUSES.has(snapshot.status)) {
+        return;
+    }
     const nextStatus = snapshot.participants.length >= snapshot.capacity ? client_1.RoomStatus.full : client_1.RoomStatus.open;
     if (snapshot.status !== nextStatus) {
         await prisma_1.prisma.room.update({ where: { id: roomId }, data: { status: nextStatus } });
