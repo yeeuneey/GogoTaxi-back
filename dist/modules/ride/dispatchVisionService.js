@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.analyzeDispatchScreenshot = analyzeDispatchScreenshot;
+const node_buffer_1 = require("node:buffer");
 const env_1 = require("../../config/env");
 const GEMINI_API_VERSION = env_1.ENV.GEMINI_API_VERSION?.trim() || 'v1beta';
 const GEMINI_MODEL = env_1.ENV.GEMINI_MODEL?.trim() || 'gemini-1.5-flash';
@@ -24,6 +25,7 @@ async function analyzeDispatchScreenshot(input) {
     if (!env_1.ENV.GEMINI_API_KEY) {
         throw new Error('GEMINI_API_KEY_NOT_CONFIGURED');
     }
+    const normalizedImage = normalizeImagePayload(input.imageBase64, input.mimeType);
     const payload = {
         contents: [
             {
@@ -32,14 +34,13 @@ async function analyzeDispatchScreenshot(input) {
                     { text: (input.prompt ?? DEFAULT_PROMPT).trim() },
                     {
                         inline_data: {
-                            mime_type: input.mimeType || 'image/png',
-                            data: input.imageBase64
+                            mime_type: normalizedImage.mimeType,
+                            data: normalizedImage.data
                         }
                     }
                 ]
             }
-        ],
-        response_mime_type: 'application/json'
+        ]
     };
     const startedAt = Date.now();
     let response;
@@ -56,7 +57,19 @@ async function analyzeDispatchScreenshot(input) {
     }
     if (!response.ok) {
         const errorText = await response.text().catch(() => 'Unknown Gemini error');
-        throw new Error(`GEMINI_REQUEST_FAILED: ${errorText}`);
+        let parsedError;
+        try {
+            parsedError = JSON.parse(errorText);
+        }
+        catch {
+            parsedError = null;
+        }
+        const geminiMessage = typeof parsedError?.error?.message === 'string' ? parsedError.error.message : errorText;
+        const err = new Error(`GEMINI_REQUEST_FAILED: ${geminiMessage}`);
+        err.status = response.status;
+        err.geminiMessage = geminiMessage;
+        err.geminiCode = parsedError?.error?.code;
+        throw err;
     }
     const body = (await response.json());
     const rawText = body?.candidates?.[0]?.content?.parts?.find(part => part.text)?.text?.trim() ?? '';
@@ -135,4 +148,26 @@ function extractJsonCandidate(text) {
         return trimmed.slice(firstBrace, lastBrace + 1);
     }
     return null;
+}
+function normalizeImagePayload(imageBase64, mimeType) {
+    let data = imageBase64?.trim();
+    if (!data) {
+        throw new Error('IMAGE_BASE64_REQUIRED');
+    }
+    let resolvedMime = mimeType?.trim() || 'image/png';
+    const dataUrlMatch = data.match(/^data:(.+?);base64,(.+)$/i);
+    if (dataUrlMatch) {
+        const [, detectedMime, payload] = dataUrlMatch;
+        if (!mimeType && detectedMime?.trim()) {
+            resolvedMime = detectedMime.trim();
+        }
+        data = payload.trim();
+    }
+    try {
+        node_buffer_1.Buffer.from(data, 'base64');
+    }
+    catch {
+        throw new Error('INVALID_IMAGE_BASE64');
+    }
+    return { data, mimeType: resolvedMime };
 }

@@ -23,6 +23,7 @@ const routes_5 = require("./modules/notifications/routes");
 const routes_6 = require("./modules/review/routes");
 const routes_7 = require("./modules/report/routes");
 const receiptService_1 = require("./modules/rideHistory/receiptService");
+const service_2 = require("./modules/settlement/service");
 // 이용 기록
 const routes_8 = require("./modules/rideHistory/routes");
 exports.router = (0, express_1.Router)();
@@ -53,14 +54,66 @@ exports.router.post('/receipts/analyze', auth_1.requireAuth, async (req, res) =>
             imageBase64: zod_1.z.string().min(20, 'imageBase64 is required'),
             mimeType: zod_1.z.string().optional(),
             prompt: zod_1.z.string().optional(),
+            roomId: zod_1.z.string().cuid().optional(),
+            action: zod_1.z.enum(['hold', 'finalize']).optional(),
+        })
+            .refine((val) => !val.action || !!val.roomId, {
+            message: 'roomId is required when action is provided',
+            path: ['roomId'],
         })
             .parse(req.body);
         const analysis = await (0, receiptService_1.analyzeReceiptImage)(input);
-        res.json({ analysis });
+        let settlement = null;
+        if (input.action && input.roomId) {
+            const amount = normalizeReceiptAmount(analysis);
+            const room = await prisma_1.prisma.room.findUnique({ where: { id: input.roomId }, select: { id: true, creatorId: true } });
+            if (!room) {
+                return res.status(404).json({ message: 'Room not found' });
+            }
+            const authUserId = req?.user?.sub;
+            if (room.creatorId !== authUserId) {
+                return res.status(403).json({ message: 'Only the host can manage settlement for this room' });
+            }
+            if (input.action === 'hold') {
+                await prisma_1.prisma.room.update({ where: { id: room.id }, data: { estimatedFare: amount } });
+                settlement = { action: 'hold', ...(await (0, service_2.holdEstimatedFare)(room.id)) };
+            }
+            else {
+                settlement = { action: 'finalize', ...(await (0, service_2.finalizeRoomSettlement)(room.id, amount)) };
+            }
+        }
+        res.json({ analysis, settlement });
     }
     catch (e) {
         if (e?.name === 'ZodError') {
             return res.status(400).json({ message: 'Validation failed', issues: e.issues });
+        }
+        if (e?.message === 'INVALID_IMAGE_BASE64' || e?.message === 'IMAGE_BASE64_REQUIRED') {
+            return res.status(400).json({ message: 'Invalid or unsupported receipt image payload' });
+        }
+        if (e?.message === 'RECEIPT_TOTAL_MISSING') {
+            return res.status(422).json({ message: 'Receipt does not contain a recognizable total amount' });
+        }
+        if (e?.message === 'UNSUPPORTED_RECEIPT_CURRENCY') {
+            return res.status(422).json({ message: '지원되지 않는 통화입니다. KRW 영수증만 처리할 수 있어요.' });
+        }
+        if (e?.message === 'ROOM_NOT_FOUND') {
+            return res.status(404).json({ message: 'Room not found' });
+        }
+        if (e?.message === 'ESTIMATED_FARE_MISSING') {
+            return res.status(409).json({ message: 'Estimated fare required' });
+        }
+        if (e?.message === 'INSUFFICIENT_BALANCE') {
+            return res.status(402).json({ message: 'Insufficient balance' });
+        }
+        if (typeof e?.status === 'number' &&
+            e.status >= 400 &&
+            e.status < 500 &&
+            typeof e?.message === 'string' &&
+            e.message.includes('GEMINI_REQUEST_FAILED')) {
+            return res
+                .status(400)
+                .json({ message: e?.geminiMessage || 'Gemini?? ???? ???? ?????. ?? ???? ??? ???.' });
         }
         if (e?.message === 'GEMINI_API_KEY_NOT_CONFIGURED') {
             return res.status(500).json({ message: 'Gemini API key is not configured.' });
@@ -70,7 +123,7 @@ exports.router.post('/receipts/analyze', auth_1.requireAuth, async (req, res) =>
             (e.message.includes('GEMINI_FETCH_FAILED') || e.message.includes('GEMINI_REQUEST_FAILED'));
         res.status(isGeminiUnavailable ? 502 : 500).json({
             message: isGeminiUnavailable
-                ? 'Gemini Vision 요청에 실패했습니다. 네트워크나 API 키를 확인해 주세요.'
+                ? 'Gemini Vision ??? ??????. ?? ? ?? ??? ???.'
                 : e?.message || 'Failed to analyze receipt',
         });
     }
@@ -140,3 +193,16 @@ exports.router.get('/notifications', auth_1.requireAuth, async (_req, res) => {
         return res.status(500).json({ message: 'Failed to load notifications' });
     }
 });
+function normalizeReceiptAmount(analysis) {
+    const amount = typeof analysis.totalAmount === 'number' && Number.isFinite(analysis.totalAmount)
+        ? Math.round(Math.abs(analysis.totalAmount))
+        : null;
+    if (!amount || amount <= 0) {
+        throw new Error('RECEIPT_TOTAL_MISSING');
+    }
+    const currency = analysis.currency?.trim().toUpperCase();
+    if (currency && currency !== 'KRW') {
+        throw new Error('UNSUPPORTED_RECEIPT_CURRENCY');
+    }
+    return amount;
+}
