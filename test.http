@@ -1,6 +1,6 @@
-@BASE = http://192.0.0.2:8080
+@BASE = http://localhost:8080
 
-@ACCESS = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWl5NDA1b2QwMDAwbmc4OTZvOGx6dG9zIiwibG9naW5JZCI6ImRrc3RrZGRrZGhrZCIsInR5cGUiOiJhY2Nlc3MiLCJqdGkiOiJjNDVhN2Y2Zi01NGFlLTQ5NzMtYTM4MS1hOGRmZmU5MTUxNWMiLCJpYXQiOjE3NjUyNzQ2OTQsImV4cCI6MTc2NTI3NTU5NH0.w4A2BHCSlPpJTCcGtaE7vDPgWrQ0y0Qnmjdyje6Cabo
+@ACCESS = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbWlkNGNoYjQwMDAwMHkwd2pkODZoYnc0IiwibG9naW5JZCI6InNhaW0iLCJ0eXBlIjoiYWNjZXNzIiwianRpIjoiMWJiMDQ2YTctODkzMS00ZDU1LTgxOTQtZjk3MzMyMGIzMmM1IiwiaWF0IjoxNzY1MjY4MDYxLCJleHAiOjE3NjUyNjg5NjF9.rsFWNB3uU-H4qybkWSuhSd14S46pFULTlqWYyjGugQA
 @REFRESH = paste_refresh_token_here
 @GEMINI_MODEL = gemini-1.5-flash-latest
 
@@ -9,9 +9,9 @@ POST {{BASE}}/api/auth/signup
 Content-Type: application/json
 
 {
-  "loginId": "dkstkddkdhkd",
-  "password": "tkddk128!!",
-  "name": "안상아",
+  "loginId": "saim",
+  "password": "123456789!",
+  "name": "김예은",
   "gender": "F",
   "phone": "010-3370-7588",
   "birthDate": "2004-02-12",
@@ -24,8 +24,8 @@ POST {{BASE}}/api/auth/login
 Content-Type: application/json
 
 {
-  "loginId": "dkstkddkdhkd",
-  "password": "tkddk128!"
+  "loginId": "saim",
+  "password": "123456789!"
 }
 
 ### Get Profile
@@ -542,7 +542,7 @@ Content-Type: multipart/form-data; boundary=boundary
 Content-Disposition: form-data; name="image"; filename="uber_capture.png"
 Content-Type: image/png
 
- C:\Users\82103\Downloads\uber_capture.png
+< C:\Users\82103\Downloads\uber_capture.png
 --boundary--
 
 @GEMINI_API_KEY=AIzaSyA1plfW6fG-wG2yVJxacm-Qf7ee1Rwc0PQ
