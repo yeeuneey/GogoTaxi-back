@@ -542,7 +542,7 @@ Content-Type: multipart/form-data; boundary=boundary
 Content-Disposition: form-data; name="image"; filename="uber_capture.png"
 Content-Type: image/png
 
-< C:\Users\82103\Downloads\uber_capture.png
+ C:\Users\82103\Downloads\uber_capture.png
 --boundary--
 
 @GEMINI_API_KEY=AIzaSyA1plfW6fG-wG2yVJxacm-Qf7ee1Rwc0PQ
