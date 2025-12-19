@@ -1,6 +1,6 @@
 import { prisma } from '../../lib/prisma';
 import { ensureBalanceForDebit, recordTransaction } from '../wallet/service';
-import { splitCollectPerHead, splitRefundPerHead } from './pricing';
+import { splitCollectPerHead } from './pricing';
 import { SettlementRecordStatus, SettlementRole, WalletTxKind } from '@prisma/client';
 import { sendNotification } from '../notifications/service';
 
@@ -33,24 +33,25 @@ export async function holdEstimatedFare(roomId: string) {
   if (!room) throw new Error('ROOM_NOT_FOUND');
   if (room.estimatedFare == null) throw new Error('ESTIMATED_FARE_MISSING');
 
-  const memberIds = Array.from(new Set([room.creatorId, ...room.participants.map((p) => p.userId)]));
-  const perHead = splitCollectPerHead(room.estimatedFare, memberIds.length);
+  const guestIds = Array.from(new Set(room.participants.map((p) => p.userId))).filter(
+    (id) => id !== room.creatorId
+  );
+  const totalCount = guestIds.length + 1;
+  const perHead = splitCollectPerHead(room.estimatedFare, totalCount);
 
-  for (const userId of memberIds) {
-    const isHost = userId === room.creatorId;
+  for (const userId of guestIds) {
     await ensureBalanceForDebit(userId, perHead, { roomId, reason: 'hold' });
-    const kind = isHost ? WalletTxKind.host_charge : WalletTxKind.hold_deposit;
     await recordTransaction({
       userId,
       roomId,
-      kind,
+      kind: WalletTxKind.hold_deposit,
       amount: -perHead,
       idempotencyKey: idKey(roomId, 'hold', userId)
     });
     await upsertSettlement({
       roomId,
       userId,
-      role: userId === room.creatorId ? SettlementRole.host : SettlementRole.guest,
+      role: SettlementRole.guest,
       deposit: perHead,
       netAmount: perHead,
       status: SettlementRecordStatus.pending
@@ -68,7 +69,7 @@ export async function holdEstimatedFare(roomId: string) {
     data: { settlementStatus: 'deposit_collected' }
   });
 
-  return { perHead, collectedFrom: memberIds.length };
+  return { perHead, collectedFrom: guestIds.length };
 }
 
 export async function finalizeRoomSettlement(roomId: string, actualFare: number) {
@@ -82,19 +83,23 @@ export async function finalizeRoomSettlement(roomId: string, actualFare: number)
   if (!room) throw new Error('ROOM_NOT_FOUND');
   if (room.estimatedFare == null) throw new Error('ESTIMATED_FARE_MISSING');
 
-  const memberIds = Array.from(new Set([room.creatorId, ...room.participants.map((p) => p.userId)]));
+  const guestIds = Array.from(new Set(room.participants.map((p) => p.userId))).filter(
+    (id) => id !== room.creatorId
+  );
+  const totalCount = guestIds.length + 1;
   const noShow = new Set(room.noShowUserIds ?? []);
 
   const delta = actualFare - room.estimatedFare;
-  const activeForExtra = memberIds.filter((id) => !noShow.has(id));
+  const activeForExtra = guestIds.filter((id) => !noShow.has(id));
 
+  const estimatedPerHead = splitCollectPerHead(room.estimatedFare, totalCount);
+  const actualPerHead = totalCount > 0 ? Math.round(actualFare / totalCount) : 0;
   let extraPerHead = 0;
   let refundPerHead = 0;
 
-  if (delta > 0 && activeForExtra.length > 0) {
-    extraPerHead = splitCollectPerHead(delta, activeForExtra.length);
+  if (actualPerHead > estimatedPerHead && activeForExtra.length > 0) {
+    extraPerHead = actualPerHead - estimatedPerHead;
     for (const userId of activeForExtra) {
-      const isHost = userId === room.creatorId;
       await ensureBalanceForDebit(userId, extraPerHead, { roomId, reason: 'extra' });
       await recordTransaction({
         userId,
@@ -106,16 +111,18 @@ export async function finalizeRoomSettlement(roomId: string, actualFare: number)
       await upsertSettlement({
         roomId,
         userId,
-        role: userId === room.creatorId ? SettlementRole.host : SettlementRole.guest,
+        role: SettlementRole.guest,
         extraCollect: extraPerHead,
-        netAmount: extraPerHead
+        netAmount: extraPerHead,
+        noShow: noShow.has(userId),
+        status: SettlementRecordStatus.settled
       });
     }
   }
 
-  if (delta < 0 && memberIds.length > 0) {
-    refundPerHead = splitRefundPerHead(Math.abs(delta), memberIds.length);
-    for (const userId of memberIds) {
+  if (actualPerHead < estimatedPerHead && guestIds.length > 0) {
+    refundPerHead = estimatedPerHead - actualPerHead;
+    for (const userId of guestIds) {
       await recordTransaction({
         userId,
         roomId,
@@ -126,7 +133,7 @@ export async function finalizeRoomSettlement(roomId: string, actualFare: number)
       await upsertSettlement({
         roomId,
         userId,
-        role: userId === room.creatorId ? SettlementRole.host : SettlementRole.guest,
+        role: SettlementRole.guest,
         refund: refundPerHead,
         netAmount: -refundPerHead,
         noShow: noShow.has(userId),
@@ -134,6 +141,23 @@ export async function finalizeRoomSettlement(roomId: string, actualFare: number)
       });
     }
   }
+
+  const guestFinalTotal = actualPerHead * guestIds.length;
+  await recordTransaction({
+    userId: room.creatorId,
+    roomId,
+    kind: WalletTxKind.host_refund,
+    amount: guestFinalTotal,
+    idempotencyKey: idKey(roomId, 'host_refund', room.creatorId)
+  });
+  await upsertSettlement({
+    roomId,
+    userId: room.creatorId,
+    role: SettlementRole.host,
+    refund: guestFinalTotal,
+    netAmount: -guestFinalTotal,
+    status: SettlementRecordStatus.settled
+  });
 
   await prisma.room.update({
     where: { id: roomId },
@@ -192,7 +216,7 @@ export async function finalizeRoomSettlement(roomId: string, actualFare: number)
         ? `예상보다 ${delta.toLocaleString()}원 더 나와 추가 징수되었습니다.`
         : `예상보다 ${Math.abs(delta).toLocaleString()}원 적게 나와 환급되었습니다.`;
 
-  for (const userId of memberIds) {
+  for (const userId of [room.creatorId, ...guestIds]) {
     sendNotification({
       userId,
       title: `방 "${room.title}" 정산 완료`,

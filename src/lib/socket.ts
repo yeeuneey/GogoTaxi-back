@@ -32,7 +32,19 @@ export function initSocket(server: HttpServer) {
       socket.emit('room:subscribed', { roomId });
     });
 
+    socket.on('room:join', (roomId: unknown) => {
+      if (typeof roomId !== 'string' || !roomId.trim()) return;
+      socket.join(roomChannel(roomId));
+      socket.emit('room:subscribed', { roomId });
+    });
+
     socket.on('room:unsubscribe', (roomId: unknown) => {
+      if (typeof roomId !== 'string' || !roomId.trim()) return;
+      socket.leave(roomChannel(roomId));
+      socket.emit('room:unsubscribed', { roomId });
+    });
+
+    socket.on('room:leave', (roomId: unknown) => {
       if (typeof roomId !== 'string' || !roomId.trim()) return;
       socket.leave(roomChannel(roomId));
       socket.emit('room:unsubscribed', { roomId });
@@ -56,4 +68,13 @@ export function emitRoomUpdate(roomId: string, payload: unknown) {
 export function emitRoomClosed(roomId: string) {
   if (!io) return;
   io.to(roomChannel(roomId)).emit('room:closed', { roomId });
+}
+
+export function emitRoomsRefresh(payload: { roomId?: string | null; reason?: string }) {
+  if (!io) return;
+  io.emit('rooms:refresh', {
+    roomId: payload.roomId ?? null,
+    reason: payload.reason ?? 'changed',
+    at: new Date().toISOString()
+  });
 }

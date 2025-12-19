@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../middlewares/auth';
 import { finalizeRoomSettlement, holdEstimatedFare } from './service';
+import { loadRoomOrThrow, broadcastRoom } from '../../controllers/room.controller';
+import { emitRoomsRefresh } from '../../lib/socket';
 
 export const settlementRouter = Router();
 settlementRouter.use(requireAuth);
@@ -26,6 +28,9 @@ settlementRouter.post('/rooms/:roomId/finalize', async (req, res) => {
     const roomId = z.string().cuid().parse(req.params.roomId);
     const body = z.object({ actualFare: z.number().int().positive() }).parse(req.body);
     const result = await finalizeRoomSettlement(roomId, body.actualFare);
+    const room = await loadRoomOrThrow(roomId);
+    broadcastRoom(room, (req as any).user?.sub);
+    emitRoomsRefresh({ roomId, reason: 'settled' });
     res.status(201).json(result);
   } catch (e: any) {
     if (e?.name === 'ZodError') return res.status(400).json({ message: 'Validation failed', issues: e.issues });

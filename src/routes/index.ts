@@ -16,6 +16,8 @@ import { reportRouter } from '../modules/report/routes';
 import { rideHistoryRouter } from '../modules/rideHistory/routes';
 import { analyzeReceiptImage } from '../modules/rideHistory/receiptService';
 import { holdEstimatedFare, finalizeRoomSettlement } from '../modules/settlement/service';
+import { loadRoomOrThrow, broadcastRoom } from '../controllers/room.controller';
+import { emitRoomsRefresh } from '../lib/socket';
 
 export const router = Router();
 
@@ -67,6 +69,9 @@ router.post('/receipts/analyze', requireAuth, async (req, res) => {
         settlement = { action: 'hold', ...(await holdEstimatedFare(room.id)) };
       } else {
         settlement = { action: 'finalize', ...(await finalizeRoomSettlement(room.id, amount)) };
+        const updatedRoom = await loadRoomOrThrow(room.id);
+        broadcastRoom(updatedRoom, authUserId);
+        emitRoomsRefresh({ roomId: room.id, reason: 'settled' });
       }
     }
 

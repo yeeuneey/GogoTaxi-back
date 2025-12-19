@@ -45,6 +45,7 @@ const createRoomSchema = z.object({
   capacity: z.coerce.number().int().min(1).max(4),
   priority: z.nativeEnum(RoomPriority).optional(),
   estimatedFare: z.coerce.number().int().positive().optional(),
+  fare: z.coerce.number().int().positive().optional(),
   estimatedEta: isoDateField.optional()
 });
 
@@ -326,6 +327,14 @@ export function serializeRoom(room: RoomWithRelations, viewerId?: string) {
   const progress = ROOM_STATUS_PROGRESS[room.status];
   const filledSeats = room.participants.length;
   const seatsAvailable = Math.max(room.capacity - filledSeats, 0);
+  const taxi =
+    room.rideState && (room.rideState.driverName || room.rideState.carNumber || room.rideState.carModel)
+      ? {
+          driverName: room.rideState.driverName ?? null,
+          carNumber: room.rideState.carNumber ?? null,
+          carModel: room.rideState.carModel ?? null
+        }
+      : null;
   const serialized = {
     ...room,
     departureLat: room.departureLat.toNumber(),
@@ -342,7 +351,8 @@ export function serializeRoom(room: RoomWithRelations, viewerId?: string) {
     filled: filledSeats,
     dispatchStage: progress.stage,
     dispatchStageLabel: progress.label,
-    rideState: serializeRideState(room.rideState)
+    rideState: serializeRideState(room.rideState),
+    taxi
   };
 
   if (!viewerId) {
@@ -450,7 +460,7 @@ export async function createRoom(req: Request, res: Response) {
         departureTime: payload.departureTime,
         capacity: payload.capacity,
         priority: payload.priority ?? RoomPriority.time,
-        estimatedFare: payload.estimatedFare ?? null,
+        estimatedFare: payload.estimatedFare ?? payload.fare ?? null,
         estimatedEta: payload.estimatedEta ?? null,
         participants: {
           create: {
@@ -498,8 +508,11 @@ export async function listRooms(req: Request, res: Response) {
     cursor
   } = parsed.data;
   const includeMine = mine ?? (!!creatorId && userId === creatorId);
+  const defaultStatusFilter =
+    status || includeMine ? {} : { status: { in: [RoomStatus.open, RoomStatus.recruiting] } };
 
   const where: Prisma.RoomWhereInput = {
+    ...defaultStatusFilter,
     ...(priority ? { priority } : {}),
     ...(!includeMine && creatorId ? { creatorId } : {}),
     ...(departureLabel
@@ -753,6 +766,9 @@ export async function updateRoom(req: Request, res: Response) {
     if (payload.capacity !== undefined) data.capacity = payload.capacity;
     if (payload.priority !== undefined) data.priority = payload.priority;
     if (payload.estimatedFare !== undefined) data.estimatedFare = payload.estimatedFare;
+    if (payload.estimatedFare === undefined && payload.fare !== undefined) {
+      data.estimatedFare = payload.fare;
+    }
     if (payload.estimatedEta !== undefined) data.estimatedEta = payload.estimatedEta;
 
     const updated = await prisma.room.update({
@@ -887,10 +903,16 @@ export async function leaveRoom(req: Request, res: Response) {
         id: true,
         creatorId: true,
         status: true,
+        settlementStatus: true,
         participants: {
           select: {
             id: true,
             userId: true
+          }
+        },
+        rideState: {
+          select: {
+            stage: true
           }
         }
       }
@@ -898,6 +920,19 @@ export async function leaveRoom(req: Request, res: Response) {
     if (!room) {
       return res.status(404).json({ message: 'Room not found' });
     }
+    const lockedStages = new Set<RoomRideStage>([
+      RoomRideStage.driver_assigned,
+      RoomRideStage.arriving,
+      RoomRideStage.onboard,
+      RoomRideStage.completed
+    ]);
+    const isDispatchCompleted = room.rideState?.stage && lockedStages.has(room.rideState.stage);
+    if (isDispatchCompleted && room.settlementStatus !== 'settled') {
+      return res
+        .status(403)
+        .json({ message: '배차 완료 후 정산 전에는 방을 나갈 수 없습니다.' });
+    }
+
     if (room.creatorId === userId) {
       if (room.participants.length > 1) {
         return res
