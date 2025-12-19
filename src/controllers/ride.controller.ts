@@ -320,6 +320,84 @@ function normalizePipe(value?: string | null) {
   return trimmed.length ? trimmed : null;
 }
 
+function normalizeLooseText(value: string): string {
+  return value
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s\p{P}\p{S}]+/gu, '');
+}
+
+function extractLocationTokens(label: string): string[] {
+  const matches = label.match(/[0-9A-Za-z가-힣]+/g);
+  if (!matches) return [];
+  return matches
+    .map(token => token.trim())
+    .filter(token => token.length >= 2 || /^\d+$/.test(token));
+}
+
+function matchesLocationLabel(rawText: string, label: string): boolean {
+  const tokens = extractLocationTokens(label);
+  if (!tokens.length) return false;
+
+  const normalizedRaw = normalizeLooseText(rawText);
+  if (!normalizedRaw) return false;
+
+  let hasNonNumericMatch = false;
+  for (const token of tokens) {
+    const normalizedToken = normalizeLooseText(token);
+    if (!normalizedToken) continue;
+    if (!normalizedRaw.includes(normalizedToken)) continue;
+    if (/[A-Za-z가-힣]/.test(token)) {
+      hasNonNumericMatch = true;
+      break;
+    }
+  }
+
+  if (hasNonNumericMatch) return true;
+
+  return tokens.some(token => /^\d+$/.test(token) && normalizedRaw.includes(token));
+}
+
+function matchesDepositUi(rawText: string): boolean {
+  const normalized = normalizeLooseText(rawText);
+  if (!normalized) return false;
+  const receiptTokens = ['영수증', 'receipt'].map(normalizeLooseText);
+  if (receiptTokens.some(token => token && normalized.includes(token))) {
+    return false;
+  }
+
+  const tokens = ['차량서비스선택', '일반택시', '스피드호출', 'ubertaxi'].map(normalizeLooseText);
+  const matched = tokens.filter(token => normalized.includes(token)).length;
+  return matched >= 2;
+}
+
+function matchesDispatchResultUi(rawText: string): boolean {
+  if (!rawText) return false;
+
+  const normalized = normalizeLooseText(rawText);
+  if (!normalized) return false;
+
+  const keywords = [
+    '배차되었습니다',
+    '배차완료',
+    '배차결과',
+    '기사님',
+    '차량번호',
+    '차종',
+    '차량'
+  ].map(normalizeLooseText);
+  const keywordMatches = keywords.filter(token => normalized.includes(token)).length;
+
+  const platePattern = /\d{2,3}\s*[가-힣]\s*\d{4}/;
+  const hasPlate = platePattern.test(rawText);
+
+  return keywordMatches >= 2 || (keywordMatches >= 1 && hasPlate);
+}
+
+function matchesDispatchScreenshotUi(rawText: string): boolean {
+  return matchesDepositUi(rawText) || matchesDispatchResultUi(rawText);
+}
+
 export async function analyzeDispatchInfo(req: Request, res: Response) {
   const param = roomParamSchema.safeParse(req.params);
   if (!param.success) {
@@ -344,7 +422,9 @@ export async function analyzeDispatchInfo(req: Request, res: Response) {
         creatorId: true,
         status: true,
         settlementStatus: true,
-        estimatedFare: true
+        estimatedFare: true,
+        departureLabel: true,
+        arrivalLabel: true
       }
     });
     if (!room) {
@@ -358,6 +438,30 @@ export async function analyzeDispatchInfo(req: Request, res: Response) {
     const normalizedDriver = normalizePipe(analysis.driverName);
     const normalizedCarNumber = normalizePipe(analysis.carNumber);
     const normalizedCarModel = normalizePipe(analysis.carModel);
+    const rawText = analysis.rawText ?? '';
+    const departureLabel = room.departureLabel?.trim() ?? '';
+    const arrivalLabel = room.arrivalLabel?.trim() ?? '';
+    if (!departureLabel || !arrivalLabel) {
+      return res.status(422).json({ message: 'Room route labels are missing' });
+    }
+    const matchesUi = matchesDispatchScreenshotUi(rawText);
+    if (!matchesUi) {
+      return res.status(422).json({ message: 'Dispatch screenshot UI does not match expected screen' });
+    }
+    const isDispatchResult = matchesDispatchResultUi(rawText);
+    if (!isDispatchResult) {
+      const hasDeparture = matchesLocationLabel(rawText, departureLabel);
+      const hasArrival = matchesLocationLabel(rawText, arrivalLabel);
+      if (!hasDeparture || !hasArrival) {
+        return res.status(422).json({ message: 'Dispatch screenshot does not match room route' });
+      }
+    }
+    if (!matchesUi) {
+      return res.status(422).json({ message: 'Dispatch screenshot UI does not match expected screen' });
+    }
+    if (!normalizedDriver && !normalizedCarNumber && !normalizedCarModel) {
+      return res.status(422).json({ message: 'Unable to recognize dispatch information in the image' });
+    }
 
     const currentRideState = await prisma.roomRideState.findUnique({
       where: { roomId: room.id }

@@ -22,6 +22,8 @@ type GeminiResponse = {
 
 const DEFAULT_PROMPT = `
 너는 다국어 택시 영수증 인식기야. 이미지를 분석해서 아래 JSON 형식으로만 답해.
+이미지에 보이는 텍스트만 사용하고 추정/창작은 금지야. 영수증이 아니거나 영수증 문구가 보이지 않으면
+totalAmount/currency/summary/items/rawText를 모두 비우거나 null로 처리해.
 {
   "totalAmount": number | null,
   "currency": "KRW" | "JPY" | "USD" | string | null,
@@ -102,6 +104,9 @@ export async function analyzeReceiptImage(input: {
     body?.candidates?.[0]?.content?.parts?.find(part => part.text)?.text?.trim() ?? ''
 
   const parsed = parseReceiptJson(rawText)
+  if (!looksLikeReceipt(parsed, rawText)) {
+    throw new Error('RECEIPT_NOT_RECOGNIZED')
+  }
 
   return {
     ...parsed,
@@ -170,6 +175,21 @@ function parseReceiptJson(rawText: string): ReceiptAnalysis {
   }
 }
 
+function looksLikeReceipt(parsed: ReceiptAnalysis, rawText: string): boolean {
+  if (!rawText) return false
+
+  const receiptKeyword = /영수증|RECEIPT/i
+  const amountHints = /합계|총액|TOTAL|금액|운임|결제|승차|거리|발행|카카오택시/i
+  const nonReceiptHints = /예치금|보증금|계좌|입금|송금|이체|거래내역|충전|잔액|출금/i
+
+  if (!receiptKeyword.test(rawText)) return false
+  if (nonReceiptHints.test(rawText)) return false
+
+  if (parsed.totalAmount != null && parsed.currency) return true
+  if (Array.isArray(parsed.items) && parsed.items.length > 0) return true
+  return amountHints.test(rawText)
+}
+
 // Gemini가 ```json ... ``` 또는 여분 텍스트를 섞어서 돌려주는 경우를 보정
 function extractJsonCandidate(text: string): string | null {
   const trimmed = text.trim()
@@ -232,7 +252,21 @@ function normalizeReceipt(parsed: ReceiptAnalysis, rawText: string): ReceiptAnal
 function coerceNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string') {
-    const cleaned = value.replace(/[^\d.-]/g, '')
+    const trimmed = value.trim()
+    if (!trimmed) return null
+
+    const rangeMatch = trimmed.match(/^([\d,\s.]+)\s*[-~]\s*([\d,\s.]+)$/)
+    if (rangeMatch) {
+      const [, startText, endText] = rangeMatch
+      const start = Number(startText.replace(/[^\d.-]/g, ''))
+      const end = Number(endText.replace(/[^\d.-]/g, ''))
+      const normalized = [start, end].filter(n => Number.isFinite(n)) as number[]
+      if (normalized.length) {
+        return Math.min(...normalized)
+      }
+    }
+
+    const cleaned = trimmed.replace(/[^\d.-]/g, '')
     if (!cleaned) return null
     const asNumber = Number(cleaned)
     return Number.isFinite(asNumber) ? asNumber : null
@@ -241,9 +275,9 @@ function coerceNumber(value: unknown): number | null {
 }
 
 const CURRENCY_PATTERNS: Array<{ currency: string; regex: RegExp }> = [
-  { currency: 'JPY', regex: /(?:JP¥|JPY|￥|¥)\s*([\d,.]+)/i },
-  { currency: 'KRW', regex: /(?:KRW|₩)\s*([\d,.]+)/i },
-  { currency: 'USD', regex: /(?:USD|\$)\s*([\d,.]+)/i },
+  { currency: 'JPY', regex: /(?:JP\u00A5|JPY|\u00A5)\s*([\d,\.\-~]+)/i },
+  { currency: 'KRW', regex: /(?:KRW|\u20A9)\s*([\d,\.\-~]+)/i },
+  { currency: 'USD', regex: /(?:USD|\$)\s*([\d,\.\-~]+)/i }
 ]
 
 function inferAmountFromRawText(rawText: string): { amount: number | null; currency: string | null } | null {
@@ -259,9 +293,9 @@ function inferAmountFromRawText(rawText: string): { amount: number | null; curre
     }
   }
 
-  const generalMatch = rawText.match(/(합계|총액|合計|total)\D*([\d,.]+)/i)
-  if (generalMatch?.[2]) {
-    const amount = coerceNumber(generalMatch[2])
+  const generalMatch = rawText.match(/(?:\uACC4|\uCD1D\uC561|\uD569\uACC4|total)\D*([\d,\.\-~]+)/i)
+  if (generalMatch?.[1]) {
+    const amount = coerceNumber(generalMatch[1])
     if (amount != null) {
       return { amount, currency: null }
     }
