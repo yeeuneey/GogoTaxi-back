@@ -13,6 +13,40 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }
 });
 
+function normalizeLooseText(value: string): string {
+  return value
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s\p{P}\p{S}]+/gu, '');
+}
+
+function matchesDepositUi(rawText: string, uiKeywords?: string[]): boolean {
+  const trimmed = (rawText || '').trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) return false;
+
+  const normalized = normalizeLooseText(trimmed);
+  if (!normalized) return false;
+
+  const generalTaxiToken = normalizeLooseText('일반 택시');
+  if (!normalized.includes(generalTaxiToken)) {
+    return false;
+  }
+
+  const receiptTokens = ['영수증', 'receipt', '합계', '총액', 'total'].map(normalizeLooseText);
+  if (receiptTokens.some(token => token && normalized.includes(token))) {
+    return false;
+  }
+
+  const tokens = ['차량 서비스 선택', '일반 택시', '스피드 호출', 'Uber Taxi'].map(normalizeLooseText);
+  const keywordPool = Array.isArray(uiKeywords) ? uiKeywords.map(normalizeLooseText) : [];
+  const matchedFromText = normalized
+    ? tokens.filter(token => normalized.includes(token)).length
+    : 0;
+  const matchedFromKeywords = tokens.filter(token => keywordPool.includes(token)).length;
+  if (matchedFromText === 0) return false;
+  return matchedFromText + matchedFromKeywords >= 2;
+}
+
 walletRouter.use(requireAuth);
 
 walletRouter.get('/balance', async (req, res) => {
@@ -99,6 +133,13 @@ walletRouter.post('/receipt/amount', upload.single('image'), async (req, res) =>
       return res.status(422).json({
         message: 'Failed to recognize amount from image',
         reason: result.reason,
+        rawText: result.rawText
+      });
+    }
+    if (!matchesDepositUi(result.rawText, result.uiKeywords)) {
+      return res.status(422).json({
+        message: 'Deposit screen UI does not match expected template',
+        reason: 'UNSUPPORTED_DEPOSIT_UI',
         rawText: result.rawText
       });
     }

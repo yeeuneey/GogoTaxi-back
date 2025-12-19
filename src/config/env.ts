@@ -23,7 +23,8 @@ export const ENV = {
   UBER_CLIENT_ID: process.env.UBER_CLIENT_ID ?? process.env.VITE_UBER_CLIENT_ID ?? '',
   GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? '',
   GEMINI_MODEL: process.env.GEMINI_MODEL ?? '',
-  GEMINI_API_VERSION: process.env.GEMINI_API_VERSION ?? ''
+  GEMINI_API_VERSION: process.env.GEMINI_API_VERSION ?? '',
+  AUTO_TOP_UP_ENABLED: process.env.AUTO_TOP_UP_ENABLED === 'true'
 };
 
 if (!ENV.DATABASE_URL) {

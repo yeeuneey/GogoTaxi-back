@@ -11,6 +11,15 @@ const decimalField = z.coerce.number().refine(Number.isFinite, {
 
 const isoDateField = z.coerce.date();
 
+const optionalSeatNumberField = z
+  .preprocess(value => {
+    if (value === undefined || value === null || value === '') {
+      return undefined;
+    }
+    return value;
+  }, z.coerce.number().int().min(1))
+  .optional();
+
 const optionalBooleanQueryField = z
   .preprocess(value => {
     if (value === undefined || value === null || value === '') {
@@ -33,21 +42,27 @@ const optionalBooleanQueryField = z
   .optional();
 
 // 방 생성 요청 스키마
-const createRoomSchema = z.object({
-  title: z.string().min(1).max(50),
-  departureLabel: z.string().min(1),
-  departureLat: decimalField,
-  departureLng: decimalField,
-  arrivalLabel: z.string().min(1),
-  arrivalLat: decimalField,
-  arrivalLng: decimalField,
-  departureTime: isoDateField,
-  capacity: z.coerce.number().int().min(1).max(4),
-  priority: z.nativeEnum(RoomPriority).optional(),
-  estimatedFare: z.coerce.number().int().positive().optional(),
-  fare: z.coerce.number().int().positive().optional(),
-  estimatedEta: isoDateField.optional()
-});
+const createRoomSchema = z
+  .object({
+    title: z.string().min(1).max(50),
+    departureLabel: z.string().min(1),
+    departureLat: decimalField,
+    departureLng: decimalField,
+    arrivalLabel: z.string().min(1),
+    arrivalLat: decimalField,
+    arrivalLng: decimalField,
+    departureTime: isoDateField,
+    capacity: z.coerce.number().int().min(1).max(4),
+    priority: z.nativeEnum(RoomPriority).optional(),
+    estimatedFare: z.coerce.number().int().positive().optional(),
+    fare: z.coerce.number().int().positive().optional(),
+    estimatedEta: isoDateField.optional(),
+    seatNumber: optionalSeatNumberField
+  })
+  .refine(data => data.seatNumber === undefined || data.seatNumber <= data.capacity, {
+    message: 'Seat number exceeds room capacity',
+    path: ['seatNumber']
+  });
 
 // 방 목록 조회 쿼리 스키마
 const listRoomsSchema = z
@@ -90,14 +105,6 @@ const updateRoomSchema = createRoomSchema.partial().refine(obj => Object.keys(ob
 });
 
 // 참여 요청 스키마
-const optionalSeatNumberField = z
-  .preprocess(value => {
-    if (value === undefined || value === null || value === '') {
-      return undefined;
-    }
-    return value;
-  }, z.coerce.number().int().min(1))
-  .optional();
 
 const joinRoomSchema = z.object({
   seatNumber: optionalSeatNumberField
@@ -136,7 +143,8 @@ export const defaultRoomInclude = {
         select: {
           id: true,
           email: true,
-          name: true
+          name: true,
+          gender: true
         }
       }
     }
@@ -447,6 +455,7 @@ export async function createRoom(req: Request, res: Response) {
   }
 
   try {
+    const hostSeatNumber = payload.seatNumber ?? 1;
     const room = await prisma.room.create({
       data: {
         title: payload.title,
@@ -465,7 +474,7 @@ export async function createRoom(req: Request, res: Response) {
         participants: {
           create: {
             userId,
-            seatNumber: 1
+            seatNumber: hostSeatNumber
           }
         }
       },
@@ -812,6 +821,39 @@ export async function joinRoom(req: Request, res: Response) {
     if (!room) {
       return res.status(404).json({ message: 'Room not found' });
     }
+
+    const existingParticipant = room.participants.find(p => p.userId === userId);
+    if (existingParticipant) {
+      const requestedSeat = body.data.seatNumber;
+      if (requestedSeat === existingParticipant.seatNumber) {
+        return res.status(409).json({ message: 'Seat already taken' });
+      }
+      if (requestedSeat === undefined) {
+        const updated = await loadRoomOrThrow(room.id);
+        const participant =
+          updated.participants.find(p => p.userId === userId) ?? null;
+        return res.status(200).json({ room: serializeRoom(updated, userId), participant });
+      }
+
+      if (requestedSeat > room.capacity) {
+        return res.status(400).json({ message: 'Seat number exceeds room capacity' });
+      }
+      if (room.participants.some(p => p.seatNumber === requestedSeat && p.userId !== userId)) {
+        return res.status(409).json({ message: 'Seat already taken' });
+      }
+
+      await prisma.roomParticipant.update({
+        where: { id: existingParticipant.id },
+        data: { seatNumber: requestedSeat }
+      });
+
+      const updated = await loadRoomOrThrow(room.id);
+      broadcastRoom(updated, userId);
+      const participant =
+        updated.participants.find(p => p.userId === userId) ?? null;
+      return res.status(200).json({ room: serializeRoom(updated, userId), participant });
+    }
+
     if (room.status !== RoomStatus.open) {
       await refreshRoomStatus(room.id);
       room = await prisma.room.findUnique({
@@ -826,9 +868,6 @@ export async function joinRoom(req: Request, res: Response) {
     }
     if (room.status !== RoomStatus.open) {
       return res.status(400).json({ message: 'Room is not open for joining' });
-    }
-    if (room.participants.some(p => p.userId === userId)) {
-      return res.status(400).json({ message: 'Already joined this room' });
     }
 
     const isFull = room.participants.length >= room.capacity;
@@ -873,7 +912,9 @@ export async function joinRoom(req: Request, res: Response) {
 
     const updated = await loadRoomOrThrow(room.id);
     broadcastRoom(updated, userId);
-    return res.status(201).json({ room: serializeRoom(updated, userId) });
+    const participant =
+      updated.participants.find(p => p.userId === userId) ?? null;
+    return res.status(201).json({ room: serializeRoom(updated, userId), participant });
   } catch (error) {
     console.error('joinRoom error', error);
     if ((error as Error).message === 'ROOM_NOT_FOUND') {
@@ -907,7 +948,8 @@ export async function leaveRoom(req: Request, res: Response) {
         participants: {
           select: {
             id: true,
-            userId: true
+            userId: true,
+            joinedAt: true
           }
         },
         rideState: {

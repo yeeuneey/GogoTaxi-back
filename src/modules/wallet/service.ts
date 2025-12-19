@@ -1,4 +1,5 @@
 import { Prisma, WalletTxKind, WalletTxStatus } from '@prisma/client';
+import { ENV } from '../../config/env';
 import { prisma } from '../../lib/prisma';
 import { mockCharge } from '../payments/mockClient';
 
@@ -79,6 +80,9 @@ export async function ensureBalanceForDebit(userId: string, amount: number, opts
   const current = await getBalance(userId);
   if (current >= amount) {
     return { autoTopUp: false, deficit: 0 };
+  }
+  if (!ENV.AUTO_TOP_UP_ENABLED) {
+    throw new Error('INSUFFICIENT_BALANCE');
   }
   const deficit = amount - current;
   const topUpAmount = Math.ceil(deficit / 10000) * 10000;

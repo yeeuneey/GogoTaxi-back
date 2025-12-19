@@ -86,6 +86,9 @@ router.post('/receipts/analyze', requireAuth, async (req, res) => {
     if (e?.message === 'RECEIPT_TOTAL_MISSING') {
       return res.status(422).json({ message: 'Receipt does not contain a recognizable total amount' });
     }
+    if (e?.message === 'RECEIPT_NOT_RECOGNIZED') {
+      return res.status(422).json({ message: 'Unable to recognize a receipt in the uploaded image' });
+    }
     if (e?.message === 'UNSUPPORTED_RECEIPT_CURRENCY') {
       return res.status(422).json({ message: '지원되지 않는 통화입니다. KRW 영수증만 처리할 수 있어요.' });
     }
